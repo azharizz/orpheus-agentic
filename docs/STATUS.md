@@ -24,7 +24,7 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline wit
 - Grafana remains a separate operational UI. The application links to it and queries the official MCP service; it does not imitate Grafana's theme.
 - The deployed slice deliberately uses Cloud Run's project-scoped worker with SQLite sessions in instance-local `/tmp`; it does not claim Agent Engine Runtime, Agent Engine Sessions, Memory Bank, or Cloud SQL product-record migration. The GCS FUSE mount persists media, but SQLite is not a shared database. A standalone Agent Engine `root_agent` entrypoint and a real relational migration remain required for the managed architecture.
 - Grafana MCP is not deployed yet. The known Grafana Cloud stack URL is `crimsonagave361.grafana.net`, but no Grafana Cloud service-account token is present in the workspace. The app therefore runs with Grafana disabled in the hosted slice rather than using a fake credential.
-- Cloud SQL was not modified. The discovered instance is private-only in project `alke-project` and is not network-attached to `orpheus-agentic`.
+- Cloud SQL is deferred to the later target project `project-cb6f73d4-12f4-4aa6-98b`.
 
 ## Layout
 

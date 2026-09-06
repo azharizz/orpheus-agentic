@@ -115,7 +115,7 @@ Cloud SQL is not needed for Agent Engine Sessions. It is still the right source 
 - human review and approval hashes
 - job status, retries, deletion, and retention state
 
-Keep the existing Cloud SQL instance if it is PostgreSQL. Do not add Firestore alongside it without a concrete query or scaling requirement. Cloud Run supports connecting to Cloud SQL; see [Cloud Run and Cloud SQL for PostgreSQL](https://docs.cloud.google.com/sql/docs/postgres/connect-instance-cloud-run).
+Provision the PostgreSQL product store later in project `project-cb6f73d4-12f4-4aa6-98b`. Do not add Firestore alongside it without a concrete query or scaling requirement. Cloud Run supports connecting to Cloud SQL; see [Cloud Run and Cloud SQL for PostgreSQL](https://docs.cloud.google.com/sql/docs/postgres/connect-instance-cloud-run).
 
 Shared-core prices are useful for testing but are not a production availability choice: `db-f1-micro` is about `$0.0105/hour` and `db-g1-small` about `$0.035/hour`; shared-core types are outside the Cloud SQL SLA. See [Cloud SQL pricing](https://cloud.google.com/sql/pricing).
 
