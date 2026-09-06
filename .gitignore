@@ -17,6 +17,7 @@ observability/export.lock
 node_modules/
 frontend/dist/
 .vite/
+.firebase/
 .ruff_cache/
 coverage/
 .DS_Store
