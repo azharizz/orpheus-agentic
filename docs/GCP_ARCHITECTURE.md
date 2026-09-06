@@ -152,7 +152,7 @@ The hosted endpoint (`https://mcp.grafana.com/mcp`) is useful for an interactive
 
 The application should link to Grafana for operational detail and query it for evidence. It must not imitate Grafana's UI or send raw audio, video, prompts, transcripts, or credentials. This follows the [Grafana boundary in the product contract](../PRODUCT.md#grafana-is-a-decision-input-not-decoration).
 
-Grafana Cloud has a `$0` Free plan with limited retention and a Pro plan starting at `$19/month` plus usage. See [Grafana pricing](https://grafana.com/pricing/) and [sending telemetry to Grafana Cloud](https://grafana.com/docs/grafana-cloud/observe-and-act/send-data/).
+Grafana Cloud has a `$0` Free plan with limited retention and a Pro plan starting at `$19/month` plus usage. The 14-day unlimited trial is not an account expiry: Grafana says trial usage is not billed and the stack automatically moves to the Free plan when the trial ends. The Free plan keeps the 14-day retention and enforces its usage limits; older telemetry rolls out of the retention window. See [Grafana pricing](https://grafana.com/pricing/), [Grafana billing FAQ](https://grafana.com/docs/grafana-cloud/platform/cost-management-and-billing/manage-invoices/understand-your-invoice/), and [sending telemetry to Grafana Cloud](https://grafana.com/docs/grafana-cloud/observe-and-act/send-data/).
 
 ### Alternative: self-hosted Grafana
 
