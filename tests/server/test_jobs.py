@@ -58,6 +58,7 @@ class JobChecks(unittest.TestCase):
         handler.headers["Origin"] = "https://orpheus-agentic.web.app"
         with (
             patch.object(web.config, "RUNTIME_MODE", "cloud_run"),
+            patch.object(web.config, "OWNER_SECRET", "test-secret"),
             patch.object(web.config, "ALLOWED_HOSTS", {"orpheus-agentic.web.app"}),
             patch.object(web.config, "ALLOWED_ORIGINS", {"https://orpheus-agentic.web.app"}),
         ):

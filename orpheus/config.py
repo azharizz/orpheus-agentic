@@ -19,6 +19,13 @@ STORAGE_BACKEND = str(VALUES.get("ORPHEUS_STORAGE_BACKEND", "local")).lower()
 if STORAGE_BACKEND not in {"local", "gcs"}:
     raise ValueError("ORPHEUS_STORAGE_BACKEND must be local or gcs")
 GCS_BUCKET = str(VALUES.get("ORPHEUS_GCS_BUCKET", "")).strip()
+METADATA_BACKEND = str(VALUES.get("ORPHEUS_METADATA_BACKEND", "filesystem")).lower()
+if METADATA_BACKEND not in {"filesystem", "cloud_sql"}:
+    raise ValueError("ORPHEUS_METADATA_BACKEND must be filesystem or cloud_sql")
+METADATA_DATABASE_URL = str(
+    VALUES.get("ORPHEUS_METADATA_DATABASE_URL", "")
+).strip()
+OWNER_SECRET = str(VALUES.get("ORPHEUS_OWNER_SECRET", "")).strip()
 DATABASE_URL = str(
     VALUES.get("ORPHEUS_SESSION_DATABASE_URL", "sqlite+aiosqlite:///" + str(DATA_DIR / "sessions.sqlite"))
 ).strip()
@@ -62,6 +69,8 @@ if RUNTIME_MODE == "cloud_run" and not PUBLIC_ORIGIN:
     raise ValueError("ORPHEUS_PUBLIC_ORIGIN is required in cloud_run mode")
 if STORAGE_BACKEND == "gcs" and not GCS_BUCKET:
     raise ValueError("ORPHEUS_GCS_BUCKET is required for the gcs storage backend")
+if RUNTIME_MODE == "cloud_run" and METADATA_BACKEND == "cloud_sql" and not METADATA_DATABASE_URL:
+    raise ValueError("ORPHEUS_METADATA_DATABASE_URL is required for cloud_sql metadata")
 if SESSION_BACKEND == "agent_engine" and not AGENT_ENGINE_ID:
     raise ValueError("ORPHEUS_AGENT_ENGINE_ID is required for the agent_engine session backend")
 UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024

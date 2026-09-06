@@ -21,6 +21,7 @@ import numpy as np
 from .. import config
 from ..domain import media, projects, review, takes
 from ..ops import observability as obs
+from . import auth, metadata, storage
 from .http import LocalHandler, RequestError
 from . import jobs
 
@@ -83,7 +84,17 @@ def start(project_id, feedback):
             )
 
 
-def project_list():
+def project_list(owner_id="local"):
+    if metadata.enabled():
+        try:
+            rows = asyncio.run(metadata.list_projects(owner_id))
+        except metadata.MetadataError as exc:
+            raise RequestError(str(exc), 503) from exc
+        for doc in rows:
+            doc["turn_details"] = []
+            doc["assisted_candidates"] = []
+            doc["human_reviews"] = []
+        return {"projects": rows, "running": busy(), "errors": []}
     rows, errors = [], []
     for path in sorted(
         projects.PROJECTS.glob("*/project.json"),
@@ -114,6 +125,25 @@ def project_list():
                 }
             )
     return {"projects": rows, "running": busy(), "errors": errors}
+
+
+def assert_owner(handler, project_id):
+    if not re.fullmatch(r"[a-f0-9]{16}", project_id):
+        raise ValueError("Invalid project ID")
+    if metadata.enabled():
+        try:
+            owned = asyncio.run(metadata.owns(project_id, handler.owner_id))
+        except metadata.MetadataError as exc:
+            raise RequestError(str(exc), 503) from exc
+        if not owned:
+            raise FileNotFoundError(project_id)
+        return
+    case = projects.load(project_id)
+    if config.RUNTIME_MODE == "cloud_run" and case.get("owner_id") not in (
+        None,
+        handler.owner_id,
+    ):
+        raise FileNotFoundError(project_id)
 
 
 def public_config():
@@ -200,11 +230,12 @@ class Handler(LocalHandler):
         elif route == "/api/config":
             self.send_json(public_config())
         elif route == "/api/projects":
-            self.send_json(project_list())
+            self.send_json(project_list(self.owner_id))
         elif route == "/api/observability":
             self.send_json(obs.status())
         elif route == "/api/takes":
             pid = parse_qs(parsed.query)["project_id"][0]
+            assert_owner(self, pid)
             projects.load(pid)
             self.send_json(
                 {
@@ -218,7 +249,13 @@ class Handler(LocalHandler):
                 }
             )
         elif route in ("/api/snippet", "/api/waveform"):
+            assert_owner(self, parse_qs(parsed.query)["project_id"][0])
             self.audio_data(route, parse_qs(parsed.query))
+        elif route == "/api/media/download-url":
+            query = parse_qs(parsed.query)
+            pid, name = query["project_id"][0], query["name"][0]
+            assert_owner(self, pid)
+            self.send_json(storage.download_url(pid, name))
         elif route.startswith("/projects/"):
             self.project_file(route.removeprefix("/projects/"))
         else:
@@ -233,6 +270,7 @@ class Handler(LocalHandler):
         if not allowed:
             raise RequestError("Artifact not found.", 404)
         pid, name = allowed.groups()
+        assert_owner(self, pid)
         if name == "poster.jpg":
             case = projects.load(pid)
             poster = projects.project_dir(pid) / name
@@ -346,6 +384,7 @@ class Handler(LocalHandler):
                 form, Path(temporary), ["audio"] if take else ["video", "sfx"]
             )
             if take:
+                assert_owner(self, form["project_id"])
                 with mutation():
                     result = takes.add_take(
                         form["project_id"],
@@ -354,6 +393,16 @@ class Handler(LocalHandler):
                         float(form.get("start_s", "0")),
                         form.get("clock", "uploaded"),
                     )
+                try:
+                    metadata.sync_receipt_now(
+                        form["project_id"],
+                        self.owner_id,
+                        "take",
+                        result["id"],
+                        result,
+                    )
+                except metadata.MetadataError as exc:
+                    raise RequestError(str(exc), 503) from exc
             else:
                 result = {
                     "project": projects.create(
@@ -365,6 +414,15 @@ class Handler(LocalHandler):
                         files["sfx"][1],
                     )
                 }
+                result["project"]["owner_id"] = self.owner_id
+                projects.atomic(
+                    projects.project_dir(result["project"]["id"]) / "project.json",
+                    result["project"],
+                )
+                try:
+                    metadata.sync_project_now(result["project"], self.owner_id)
+                except metadata.MetadataError as exc:
+                    raise RequestError(str(exc), 503) from exc
         self.send_json(result, 201)
 
     def json_action(self, route):
@@ -374,13 +432,23 @@ class Handler(LocalHandler):
             "/api/assist",
             "/api/takes/fit",
             "/api/grafana",
+            "/api/media/upload-url",
         ):
             raise RequestError("Route not found.", 404)
         data = self.read_json(100000 if route == "/api/assist" else 3000)
+        if route == "/api/media/upload-url":
+            pid = data["project_id"]
+            assert_owner(self, pid)
+            self.send_json(
+                storage.upload_url(pid, data["field"], data.get("content_type", "application/octet-stream"))
+            )
+            return
         if route == "/api/run":
+            assert_owner(self, data["project_id"])
             start(data["project_id"], data.get("feedback", DEFAULT_FEEDBACK))
             self.send_json({"started": True, "project_id": data["project_id"]}, 202)
         elif route == "/api/grafana":
+            assert_owner(self, data["project_id"])
             projects.load(data["project_id"])
             self.send_json(
                 asyncio.run(
@@ -392,6 +460,7 @@ class Handler(LocalHandler):
                 )
             )
         elif route == "/api/takes/fit":
+            assert_owner(self, data["project_id"])
             with LOCK:
                 with mutation():
                     doc = takes.fitting_project(data["project_id"], data["take_id"])
@@ -399,14 +468,31 @@ class Handler(LocalHandler):
                     doc["id"],
                     "Query Grafana takes for the parent project. Compare recorded takes, propose one evidence-linked prop or performance experiment, then fit this selected take to picture and compare measurements through Grafana.",
                 )
+            doc["owner_id"] = self.owner_id
+            projects.atomic(projects.project_dir(doc["id"]) / "project.json", doc)
+            try:
+                metadata.sync_project_now(doc, self.owner_id)
+            except metadata.MetadataError as exc:
+                raise RequestError(str(exc), 503) from exc
             self.send_json({"project": doc}, 201)
         else:
+            assert_owner(self, data["project_id"])
             with mutation():
                 result = (
                     review.save_review(data)
                     if route == "/api/review"
                     else review.assist(data)
                 )
+            try:
+                metadata.sync_receipt_now(
+                    data["project_id"],
+                    self.owner_id,
+                    "review" if route == "/api/review" else "assisted",
+                    result["id"],
+                    result,
+                )
+            except metadata.MetadataError as exc:
+                raise RequestError(str(exc), 503) from exc
             self.send_json(result, 201)
 
 

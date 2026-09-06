@@ -34,7 +34,9 @@ def save_review(data):
         raise ValueError("Choose approve or reject.")
     if not isinstance(note, str) or len(note) > 500:
         raise ValueError("Review notes must be at most 500 characters.")
+    review_id = uuid.uuid4().hex[:12]
     record = {
+        "id": review_id,
         "candidate_id": rendered["id"],
         "audio_sha256": rendered["audio_sha256"],
         "verdict": verdict,
@@ -43,7 +45,7 @@ def save_review(data):
         "created_at": time.time(),
     }
     projects.atomic(
-        projects.project_dir(case["id"]) / (uuid.uuid4().hex[:12] + "-human.json"),
+        projects.project_dir(case["id"]) / (review_id + "-human.json"),
         record,
     )
     obs.emit(

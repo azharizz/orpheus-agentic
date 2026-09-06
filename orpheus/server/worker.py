@@ -36,6 +36,7 @@ from ..config import (
 )
 from ..domain.projects import atomic, frames, load, project_dir
 from ..ops import observability as obs
+from . import metadata
 
 APP = "orpheus"
 
@@ -244,6 +245,8 @@ async def run_turn(pid, feedback):
     doc["status"] = "running"
     doc["turns"].append(tid)
     atomic(folder / "project.json", doc)
+    if metadata.enabled():
+        await metadata.sync_project(doc, doc.get("owner_id", "local"))
     provider_failed = False
 
     def log(event, **fields):
@@ -515,6 +518,14 @@ async def run_turn(pid, feedback):
         )
         doc["status"] = turn["status"]
         atomic(folder / "project.json", doc)
+        if metadata.enabled():
+            try:
+                owner_id = doc.get("owner_id", "local")
+                await metadata.sync_turn(pid, turn, owner_id)
+                await metadata.sync_project(doc, owner_id)
+            except metadata.MetadataError:
+                turn["catalog_sync"] = "failed"
+                atomic(folder / (tid + "-turn.json"), turn)
     return turn
 
 

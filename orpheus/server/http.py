@@ -8,6 +8,7 @@ from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler
 
 from .. import config
+from . import auth
 
 
 class RequestError(ValueError):
@@ -32,6 +33,7 @@ class LocalHandler(BaseHTTPRequestHandler):
         super().end_headers()
 
     def local_request(self, mutation=False):
+        auth.resolve(self)
         host = self.headers.get("Host", "").split(",", 1)[0].strip()
         if config.RUNTIME_MODE == "local":
             expected = f"127.0.0.1:{self.server.server_port}"
@@ -51,6 +53,8 @@ class LocalHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        if getattr(self, "owner_cookie", None):
+            self.send_header("Set-Cookie", auth.cookie_header(self.owner_cookie))
         self.end_headers()
         if self.command != "HEAD":
             try:
