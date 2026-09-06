@@ -1,6 +1,6 @@
 # Orpheus delivery status
 
-Updated 2026-09-06. This is a local, single-user production-quality baseline with a cloud-ready deployment boundary. It is not a perceptual sound-quality certificate.
+Updated 2026-09-06. This is a local, single-user production-quality baseline with a lean hosted deployment slice. It is not a perceptual sound-quality certificate.
 
 ## Verified
 
@@ -15,14 +15,16 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline wit
 - Impeccable detector returned no findings for `frontend/src` after the bounded visual pass. Self-hosted Barlow Condensed and Source Sans 3 assets are licensed and bundled.
 - No `useEffect`, imperative DOM queries, reference-lab imports, or source file over 800 lines in application code.
 - Cloud-ready runtime mode is explicit: the API accepts Cloud Run's `PORT`, binds to `0.0.0.0`, validates configured public origins, and dispatches long turns to a named Cloud Run Job. `Dockerfile`, `deploy/cloud-run-job.yaml`, and read-only `deploy/check.sh` are included.
+- Hosted slice is live in GCP project `orpheus-agentic`: Firebase Hosting serves the two-page frontend, `/api/**` rewrites to Cloud Run `orpheus-api`, and Cloud Run Job `orpheus-worker` is deployed with the pinned image digest. Media uses the private `orpheus-agentic-media` bucket; provider fallback uses Secret Manager.
 
 ## Known limits
 
 - The paid parity run is evidence of wiring and real-provider behavior only. Its own receipt keeps the result provisional: source character mismatch, timing/listening uncertainty, unresolved acoustic hypotheses, and whole-soundtrack replacement are disclosed for human review.
 - Browser capture still depends on the user's microphone permission and hardware. Automated tests cover cancellation, final chunk delivery, cleanup, mute restoration, and upload boundaries without granting that permission.
 - Grafana remains a separate operational UI. The application links to it and queries the official MCP service; it does not imitate Grafana's theme.
-- The Cloud Run boundary is implemented, but no billing account was linked, API was enabled, IAM grant was made, image was pushed, service/job was created, or Firebase API rewrite was enabled. Those are deliberate external-state gates.
-- Agent Engine session selection and Vertex model selection are implemented behind configuration. The current project-scoped worker still needs a standalone Agent Engine `root_agent` entrypoint before managed runtime deployment; Memory Bank consent flow and Cloud SQL product-record migration also require the cloud project and credentials. Local filesystem JSON and local ADK SQLite remain the verified default.
+- The deployed slice deliberately uses Cloud Run's project-scoped worker with SQLite sessions in instance-local `/tmp`; it does not claim Agent Engine Runtime, Agent Engine Sessions, Memory Bank, or Cloud SQL product-record migration. The GCS FUSE mount persists media, but SQLite is not a shared database. A standalone Agent Engine `root_agent` entrypoint and a real relational migration remain required for the managed architecture.
+- Grafana MCP is not deployed yet. The known Grafana Cloud stack URL is `crimsonagave361.grafana.net`, but no Grafana Cloud service-account token is present in the workspace. The app therefore runs with Grafana disabled in the hosted slice rather than using a fake credential.
+- Cloud SQL was not modified. The discovered instance is private-only in project `alke-project` and is not network-attached to `orpheus-agentic`.
 
 ## Layout
 

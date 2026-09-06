@@ -9,6 +9,13 @@
     "cleanUrls": true,
     "rewrites": [
       {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "orpheus-api",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/workspace",
         "destination": "/index.html"
       },
