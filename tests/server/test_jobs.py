@@ -29,6 +29,27 @@ class JobChecks(unittest.TestCase):
         dispatch.assert_called_once_with("a" * 16, "run")
         popen.assert_not_called()
 
+    def test_cloud_runtime_uses_agent_engine_when_configured(self):
+        with (
+            patch.object(jobs.config, "RUNTIME_MODE", "cloud_run"),
+            patch.object(jobs.config, "GOOGLE_CLOUD_PROJECT", "orpheus-agentic"),
+            patch.object(jobs.config, "AGENT_ENGINE_ID", "5166883865117065216"),
+            patch.object(
+                jobs,
+                "_dispatch_agent_engine",
+                return_value={"status": "submitted", "runtime": "agent_engine"},
+            ) as dispatch,
+        ):
+            result = jobs.dispatch("a" * 16, "run")
+        self.assertEqual(result["runtime"], "agent_engine")
+        dispatch.assert_called_once_with("a" * 16, "run")
+
+    def test_submission_result_can_be_found_in_runtime_event(self):
+        result = jobs._submission(
+            {"event": {"tool": {"response": {"status": "submitted", "operation": "op"}}}}
+        )
+        self.assertEqual(result["operation"], "op")
+
     def test_cloud_runtime_checks_configured_host_and_origin(self):
         handler = object.__new__(web.Handler)
         handler.server = SimpleNamespace(server_port=8080)

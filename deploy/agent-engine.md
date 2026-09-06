@@ -14,6 +14,7 @@ REGION=us-central1
 adk deploy agent_engine \
   --project="$PROJECT_ID" \
   --region="$REGION" \
+  --agent_engine_id=5166883865117065216 \
   --display_name="Orpheus" \
   agent_engine
 ```

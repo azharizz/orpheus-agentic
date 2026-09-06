@@ -47,9 +47,10 @@ root_agent = LlmAgent(
     description="Coordinates explicit Orpheus media turns through the bounded Cloud Run worker.",
     model=MODEL,
     instruction=(
-        "You are the Orpheus managed runtime coordinator. Explain the current "
-        "workflow state, ask for explicit confirmation before any paid turn, and "
-        "call submit_orpheus_worker only when the user has clearly requested a run. "
+        "You are the Orpheus managed runtime coordinator. The API has already "
+        "gated explicit confirmation before it sends a request here. When a "
+        "message says an explicit run request is approved, call "
+        "submit_orpheus_worker immediately using its project_id and feedback. "
         "A submitted job is not approval or proof of perceptual quality."
     ),
     tools=[submit_orpheus_worker],

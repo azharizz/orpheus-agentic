@@ -90,8 +90,8 @@ Sessions and Memory Bank storage/operations are billable under the current prici
 1. The browser authenticates and asks `orpheus-api` for a project or run.
 2. The API creates a run record in Cloud SQL and returns short-lived signed URLs for media upload.
 3. The browser uploads source media directly to Cloud Storage; buckets remain private.
-4. The API starts or resumes the Agent Engine Session with the project and run identifiers.
-5. Agent Runtime calls authenticated application tools. Those tools request a Cloud Run Job for deterministic media work.
+4. The API invokes the deployed Agent Engine coordinator with the project and run identifiers; the coordinator starts or resumes the Agent Engine Session.
+5. Agent Runtime calls the authenticated worker tool. That tool requests a Cloud Run Job for deterministic media work.
 6. The media job downloads from Cloud Storage, processes in temporary local disk, writes artifacts back to Cloud Storage, and records metadata in Cloud SQL.
 7. The agent queries Grafana MCP for scoped history, sound, take, failure, or runtime evidence.
 8. The agent may propose a bounded revision. The API exposes status by run ID through polling or a streaming endpoint.
