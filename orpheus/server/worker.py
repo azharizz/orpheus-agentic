@@ -12,6 +12,10 @@ import uuid
 from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 from google.adk.agents.run_config import RunConfig
 from google.adk.events import Event, EventActions
+from google.adk.memory.memory_entry import MemoryEntry
+from google.adk.memory.vertex_ai_memory_bank_service import (
+    VertexAiMemoryBankService,
+)
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService, VertexAiSessionService
 from google.genai import types
@@ -28,6 +32,7 @@ from ..config import (
     PACKAGE_DIR,
     TURN_TIMEOUT_SECONDS,
     SESSION_BACKEND,
+    MEMORY_BANK_ENABLED,
 )
 from ..domain.projects import atomic, frames, load, project_dir
 from ..ops import observability as obs
@@ -67,6 +72,58 @@ def session_service():
             agent_engine_id=AGENT_ENGINE_ID,
         )
     return DatabaseSessionService(db_url=DATABASE_URL)
+
+
+def memory_service():
+    if not MEMORY_BANK_ENABLED:
+        return None
+    return VertexAiMemoryBankService(
+        project=GOOGLE_CLOUD_PROJECT,
+        location=GOOGLE_CLOUD_LOCATION,
+        agent_engine_id=AGENT_ENGINE_ID,
+    )
+
+
+async def load_project_memory(service, project_id):
+    if service is None:
+        return []
+    response = await service.search_memory(
+        app_name=APP,
+        user_id=project_id,
+        query="Orpheus sound design context and style preferences",
+    )
+    memories = []
+    for entry in response.memories[:8]:
+        text = " ".join(
+            part.text.strip()
+            for part in entry.content.parts
+            if part.text and part.text.strip()
+        )
+        if text:
+            memories.append(text[:500])
+    return memories
+
+
+async def save_project_memory(service, project_id, case):
+    if service is None:
+        return
+    content = (
+        f"Project context: {case['context']}\n"
+        f"Project style: {case['style']}"
+    )
+    await service.add_memory(
+        app_name=APP,
+        user_id=project_id,
+        memories=[
+            MemoryEntry(
+                content=types.Content(
+                    role="user",
+                    parts=[types.Part(text=content[:2000])],
+                ),
+                custom_metadata={"source": "project_settings"},
+            )
+        ],
+    )
 
 
 def active():
@@ -243,6 +300,7 @@ async def run_turn(pid, feedback):
         )
 
     service = None
+    memory = None
     runner = None
     phase = "session_initialization"
     try:
@@ -252,6 +310,7 @@ async def run_turn(pid, feedback):
             if hashlib.sha256((folder / name).read_bytes()).hexdigest() != digest:
                 raise ValueError("Prepared input changed")
         phase = "session"
+        memory = memory_service()
         session = await service.get_session(
             app_name=APP, user_id="local", session_id=pid
         )
@@ -272,6 +331,13 @@ async def run_turn(pid, feedback):
                 folder.glob("*-human.json"), key=lambda p: p.stat().st_mtime
             )
         ][-20:]
+        memory_context = []
+        if memory is not None:
+            try:
+                memory_context = await load_project_memory(memory, pid)
+                log("memory_loaded", count=len(memory_context))
+            except Exception as exc:
+                log("memory_load_failed", error_type=type(exc).__name__)
         # Human UI receipts are a separate trust domain; model notes never create them.
         await service.append_event(
             session,
@@ -285,6 +351,7 @@ async def run_turn(pid, feedback):
                             "style": case["style"],
                             "feedback": feedback,
                         },
+                        "memory_context": memory_context,
                     }
                 ),
             ),
@@ -340,7 +407,12 @@ async def run_turn(pid, feedback):
                 ),
             )
         agent = build(case, folder, log)
-        runner = Runner(app_name=APP, agent=agent, session_service=service)
+        runner = Runner(
+            app_name=APP,
+            agent=agent,
+            session_service=service,
+            memory_service=memory,
+        )
         times = [float(t) for t in range(int(case["seconds"]))] + [
             max(0, case["seconds"] - 0.06)
         ]
@@ -396,6 +468,12 @@ async def run_turn(pid, feedback):
             turn["incomplete_reason"] = (
                 "Loop ended without a selection; do not interpret generated candidates as approval."
             )
+        elif memory is not None:
+            try:
+                await save_project_memory(memory, pid, case)
+                log("memory_saved", scope=pid)
+            except Exception as exc:
+                log("memory_save_failed", error_type=type(exc).__name__)
         turn["persistent_state"] = {
             "session_id": pid,
             "event_count": len(session.events),

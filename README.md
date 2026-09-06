@@ -33,7 +33,7 @@ The Python package is grouped by responsibility: `orpheus/domain/` owns project 
 
 ## GCP deployment shape
 
-The repository now includes a Cloud Run compatible API image (`Dockerfile`), a Cloud Run Job manifest for long worker turns (`deploy/cloud-run-job.yaml`), and a read-only project preflight (`deploy/check.sh`). Build and publish the image, create the job, then deploy the API with `ORPHEUS_RUNTIME_MODE=cloud_run`, `ORPHEUS_CLOUD_RUN_JOB=orpheus-worker`, a configured public origin, Vertex credentials, and the Cloud SQL session URL. Keep `firebase.json` static-only until the API URL exists; merge `deploy/firebase.rewrite.example.json` into it only after the service is deployed.
+The repository includes a Cloud Run compatible API image (`Dockerfile`), a Cloud Run Job manifest for long worker turns (`deploy/cloud-run-job.yaml`), a managed Agent Engine coordinator (`agent_engine/`), and a read-only project preflight (`deploy/check.sh`). The hosted deployment uses Agent Engine Sessions, selective Memory Bank, Cloud Storage media, and a private Grafana MCP adapter; Cloud SQL product records remain deferred. Keep provider credentials server-side and use the values documented in [`deploy/README.md`](deploy/README.md).
 
 ```sh
 docker build -t REGION-docker.pkg.dev/PROJECT_ID/orpheus/api:TAG .

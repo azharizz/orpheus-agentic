@@ -20,9 +20,19 @@ DB = STORE / "outbox.sqlite"
 
 
 def config():
-    if os.environ.get("ORPHEUS_GRAFANA_ENABLED") == "0" or not CONFIG.exists():
+    if os.environ.get("ORPHEUS_GRAFANA_ENABLED") == "0":
         return None
-    return json.loads(CONFIG.read_text())
+    if CONFIG.exists():
+        return json.loads(CONFIG.read_text())
+    mcp_url = os.environ.get("ORPHEUS_GRAFANA_MCP_URL", "").strip().rstrip("/")
+    mcp_token = os.environ.get("ORPHEUS_GRAFANA_MCP_TOKEN", "").strip()
+    if not mcp_url or not mcp_token:
+        return None
+    return {
+        "mcp_url": mcp_url,
+        "mcp_token": mcp_token,
+        "dashboard_url": os.environ.get("ORPHEUS_GRAFANA_DASHBOARD_URL", "").strip(),
+    }
 
 
 def connect():
@@ -345,6 +355,8 @@ def flush(limit=500):
                 ("loki_url", 3, "logs_sent"),
                 ("tempo_url", 4, "trace_sent"),
             ]:
+                if backend not in cfg:
+                    continue
                 batch = [r for r in rows if not r[flag]]
                 if not batch:
                     continue

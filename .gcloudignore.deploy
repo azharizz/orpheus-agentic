@@ -1,0 +1,11 @@
+.git/
+.venv/
+frontend/node_modules/
+data/
+observability/.env
+.env
+__pycache__/
+*.pyc
+tests/
+docs/
+agent_engine_tmp*/

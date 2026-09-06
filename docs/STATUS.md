@@ -1,6 +1,6 @@
 # Orpheus delivery status
 
-Updated 2026-09-06. This is a local, single-user production-quality baseline with a lean hosted deployment slice. It is not a perceptual sound-quality certificate.
+Updated 2026-09-07. This is a local, single-user production-quality baseline with a managed GCP deployment slice. It is not a perceptual sound-quality certificate.
 
 ## Verified
 
@@ -16,14 +16,16 @@ Updated 2026-09-06. This is a local, single-user production-quality baseline wit
 - No `useEffect`, imperative DOM queries, reference-lab imports, or source file over 800 lines in application code.
 - Cloud-ready runtime mode is explicit: the API accepts Cloud Run's `PORT`, binds to `0.0.0.0`, validates configured public origins, and dispatches long turns to a named Cloud Run Job. `Dockerfile`, `deploy/cloud-run-job.yaml`, and read-only `deploy/check.sh` are included.
 - Hosted slice is live in GCP project `orpheus-agentic`: Firebase Hosting serves the two-page frontend, `/api/**` rewrites to Cloud Run `orpheus-api`, and Cloud Run Job `orpheus-worker` is deployed with the pinned image digest. Media uses the private `orpheus-agentic-media` bucket; provider fallback uses Secret Manager.
+- Agent Engine Runtime is deployed as reasoning engine `5166883865117065216`. Managed Sessions and selective Memory Bank are enabled in the API/job worker; the managed runtime coordinates explicit turns while the existing full media workflow remains in `orpheus-worker`.
+- Grafana MCP is deployed as private Cloud Run service `grafana-mcp`. Its Grafana Viewer token and MCP caller token are in Secret Manager; the app can query Grafana Cloud without exposing either token to the browser.
 
 ## Known limits
 
 - The paid parity run is evidence of wiring and real-provider behavior only. Its own receipt keeps the result provisional: source character mismatch, timing/listening uncertainty, unresolved acoustic hypotheses, and whole-soundtrack replacement are disclosed for human review.
 - Browser capture still depends on the user's microphone permission and hardware. Automated tests cover cancellation, final chunk delivery, cleanup, mute restoration, and upload boundaries without granting that permission.
 - Grafana remains a separate operational UI. The application links to it and queries the official MCP service; it does not imitate Grafana's theme.
-- The deployed slice deliberately uses Cloud Run's project-scoped worker with SQLite sessions in instance-local `/tmp`; it does not claim Agent Engine Runtime, Agent Engine Sessions, Memory Bank, or Cloud SQL product-record migration. The GCS FUSE mount persists media, but SQLite is not a shared database. A standalone Agent Engine `root_agent` entrypoint and a real relational migration remain required for the managed architecture.
-- Grafana MCP is not deployed yet. The known Grafana Cloud stack URL is `crimsonagave361.grafana.net`, but no Grafana Cloud service-account token is present in the workspace. The app therefore runs with Grafana disabled in the hosted slice rather than using a fake credential.
+- The media worker still uses Cloud Run's project-scoped job and does not use Cloud SQL for product records yet. Agent Engine Sessions now hold ADK event history, while Cloud Storage holds media and artifacts. Cloud SQL remains deferred to `project-cb6f73d4-12f4-4aa6-98b`.
+- Grafana MCP is query-connected, but Loki/Tempo writer export is not configured. The service starts with a read-only Grafana Viewer token and the app uses MCP-only observability when the local Grafana file is absent.
 - Cloud SQL is deferred to the later target project `project-cb6f73d4-12f4-4aa6-98b`.
 
 ## Layout

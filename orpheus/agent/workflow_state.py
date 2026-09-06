@@ -418,6 +418,7 @@ class StateTools:
                 "notes": s.get("notes", [])[-12:],
                 "human_reviews": s.get("human_reviews", []),
                 "user_preferences": s.get("user_preferences", {}),
+                "memory_context": s.get("memory_context", []),
                 "candidates": [
                     {
                         k: c.get(k)

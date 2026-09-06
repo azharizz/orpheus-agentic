@@ -21,10 +21,16 @@ spec:
                   value: cloud_run
                 - name: ORPHEUS_PROVIDER_PROFILE
                   value: vertex
+                - name: ORPHEUS_VERTEX_MODEL
+                  value: gemini-3.0-flash
                 - name: ORPHEUS_PROVIDER_FAILOVER
                   value: "1"
                 - name: ORPHEUS_SESSION_BACKEND
-                  value: database
+                  value: agent_engine
+                - name: ORPHEUS_AGENT_ENGINE_ID
+                  value: "5166883865117065216"
+                - name: ORPHEUS_MEMORY_BANK
+                  value: "1"
                 - name: ORPHEUS_SESSION_DATABASE_URL
                   value: sqlite+aiosqlite:////tmp/sessions.sqlite
                 - name: ORPHEUS_PUBLIC_ORIGIN
@@ -43,6 +49,17 @@ spec:
                   value: "0"
                 - name: AGENT_PROVIDER_URL
                   value: https://openrouter.ai/api/v1/chat/completions
+                - name: ORPHEUS_GRAFANA_ENABLED
+                  value: "1"
+                - name: ORPHEUS_GRAFANA_MCP_URL
+                  value: https://grafana-mcp-3obekfb6xq-uc.a.run.app/mcp
+                - name: ORPHEUS_GRAFANA_DASHBOARD_URL
+                  value: https://crimsonagave361.grafana.net
+                - name: ORPHEUS_GRAFANA_MCP_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: mcp-caller-token
+                      key: latest
                 - name: AGENT_PROVIDER_API_KEY
                   valueFrom:
                     secretKeyRef:

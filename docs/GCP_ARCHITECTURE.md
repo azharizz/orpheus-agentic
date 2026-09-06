@@ -1,6 +1,6 @@
 # Orpheus GCP architecture
 
-Status: lean hosted slice deployed; managed resources remain gated. The current target remains a local, single-user application. This document describes the full GCP shape without claiming that the managed migration is complete.
+Status: managed hosted slice deployed in `orpheus-agentic`; Cloud SQL product records remain deferred. The current target remains a local, single-user application.
 
 The design preserves the product contract in [`PRODUCT.md`](../PRODUCT.md): deterministic media processing, stateful ADK decisions, explicit paid work, human approval, redacted telemetry, and Grafana as an evidence plane.
 
@@ -57,7 +57,7 @@ All application resources should start in one GCP region. Jakarta (`asia-southea
 
 ## Agent Runtime, Sessions, and Memory Bank
 
-An Agent Engine instance supports managed Sessions and Memory Bank. The ADK agent is deployed when Runtime is configured; creating the instance alone does not deploy an agent. See Google's [Agent Engine setup documentation](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/memory-bank/set-up).
+The deployed Agent Engine Runtime reasoning engine is `5166883865117065216`. It provides the managed coordinator entrypoint; the full Orpheus media workflow continues to run in the bounded Cloud Run Job. The API/job worker use Agent Engine Sessions for ADK event history and Memory Bank only for explicit project context/style preferences. See Google's [Agent Engine setup documentation](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/memory-bank/set-up).
 
 ### Sessions
 
@@ -65,7 +65,7 @@ Sessions are required for Orpheus's multi-step inspect → map → fit → rende
 
 - Use one stable session identity per authenticated user and Orpheus project.
 - Keep turn identity separate from session identity.
-- Replace the local SQLite `DatabaseSessionService` with Agent Engine Sessions.
+- The hosted worker uses `VertexAiSessionService`; local development continues to use `DatabaseSessionService`.
 - Store only the product-level run and artifact references in Cloud SQL.
 - Resume only a supported interrupted run; do not silently start a new paid turn.
 
@@ -148,7 +148,7 @@ Keep the explicit provider adapter and failover for the post-contest product pro
 
 Grafana Cloud is an external managed observability stack, not an application container. Export redacted OpenTelemetry metrics, logs, and traces from the API, Agent Runtime, and media job. Run the open-source [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana) server as a private `grafana-mcp` Cloud Run service with a read-only Grafana service-account token. Agent Runtime calls this adapter over authenticated MCP.
 
-The hosted endpoint (`https://mcp.grafana.com/mcp`) is useful for an interactive developer/demo connection, but its OAuth flow requires a browser and has no service-account or machine-token option. It is therefore not the server-to-server path for an unattended Agent Runtime deployment. See the [Grafana track authentication guidance](https://agentic-cinema.devpost.com/details/grafana-resources).
+The deployed `grafana-mcp` Cloud Run service is the server-to-server path. It uses a read-only Grafana Viewer token from Secret Manager and caller authentication with a separate MCP token. The hosted endpoint (`https://mcp.grafana.com/mcp`) remains useful for an interactive developer/demo connection, but its OAuth flow requires a browser and has no service-account or machine-token option. See the [Grafana track authentication guidance](https://agentic-cinema.devpost.com/details/grafana-resources).
 
 The application should link to Grafana for operational detail and query it for evidence. It must not imitate Grafana's UI or send raw audio, video, prompts, transcripts, or credentials. This follows the [Grafana boundary in the product contract](../PRODUCT.md#grafana-is-a-decision-input-not-decoration).
 
@@ -182,13 +182,13 @@ Choose one frontend deployment:
 1. Firebase Hosting for static landing/workspace assets, Cloud Run for `/api`.
 2. Cloud Run serves static assets and the Python API together.
 
-For the current private single-user target, option 2 has fewer moving parts. Use Firebase Hosting when global static delivery and preview channels justify the extra service. Hosting is no-cost up to 10 GB storage and 360 MB/day transfer, then usage charges apply. See [Firebase pricing](https://firebase.google.com/pricing/).
+The current deployment uses option 1: Firebase Hosting serves the static landing/workspace assets and rewrites `/api/**` to Cloud Run `orpheus-api`. Hosting is no-cost up to 10 GB storage and 360 MB/day transfer, then usage charges apply. See [Firebase pricing](https://firebase.google.com/pricing/).
 
 Do not add Firebase Authentication for the current private single-user deployment unless an actual external identity requirement appears. Add Identity Platform/Firebase Auth when multiple users, invitations, or account recovery are required.
 
 ## Two architecture choices
 
-### A. Managed agent architecture — recommended
+### A. Managed agent architecture — deployed choice
 
 - Agent Engine Runtime hosts ADK.
 - Agent Engine Sessions own agent history.
@@ -199,13 +199,13 @@ Do not add Firebase Authentication for the current private single-user deploymen
 - Grafana Cloud owns observability and the private `grafana-mcp` adapter supplies MCP evidence.
 - Firebase Hosting remains optional.
 
-This best matches the future GCP contract and removes the local SQLite session dependency.
+This matches the GCP contract and removes the hosted worker's local SQLite session dependency. Cloud SQL product records remain the one deferred persistence migration.
 
-### B. Lean hosted architecture
+### B. Lean hosted architecture — alternative
 
 - Cloud Run hosts the ADK runner.
 - Managed Agent Engine Sessions remain the session store.
-- Memory Bank starts disabled and is added only after a clear preference use case.
+- Memory Bank would start disabled and be added only after a clear preference use case.
 - Cloud Run Job, Cloud SQL, Cloud Storage, and Grafana Cloud remain the same.
 
 This reduces managed-agent integration, but gives up Agent Engine Runtime. Use it only if service count or early cost matters more than the managed runtime requirement.
@@ -261,14 +261,14 @@ Add a queue when concurrent runs create real backpressure. Add a separate worker
 
 ## Migration checkpoints
 
-1. Confirm Cloud SQL PostgreSQL engine, region, backups, and private connectivity.
-2. Create separate media and Agent Runtime staging buckets.
-3. Deploy the ADK agent to Agent Engine Runtime and replace local SQLite Sessions.
-4. Package FFmpeg/NumPy as the Cloud Run media Job.
-5. Move project/artifact metadata from filesystem JSON to Cloud SQL; keep media in Cloud Storage.
-6. Add signed upload/download URLs and authenticated run ownership.
-7. Connect redacted OpenTelemetry to Grafana Cloud and configure read-only MCP.
-8. Validate restart, cancellation, idempotency, stale evidence, deletion, and exact approval hashes.
-9. Run one capped paid parity turn before expanding usage.
+1. **Deferred:** provision Cloud SQL PostgreSQL in `project-cb6f73d4-12f4-4aa6-98b` for product records.
+2. **Done:** create separate media and Agent Runtime staging buckets.
+3. **Done:** deploy the ADK coordinator to Agent Engine Runtime and use Agent Engine Sessions in the hosted worker.
+4. **Done:** package FFmpeg/NumPy as the Cloud Run media Job.
+5. **Remaining:** move project/artifact metadata from filesystem JSON to Cloud SQL; keep media in Cloud Storage.
+6. **Remaining:** add signed upload/download URLs and authenticated run ownership.
+7. **Partial:** Grafana MCP is connected with read-only queries; redacted Loki/Tempo writer export still needs configuration.
+8. **Remaining:** validate restart, cancellation, idempotency, stale evidence, deletion, and exact approval hashes in the hosted path.
+9. **Remaining:** run one capped hosted paid parity turn before expanding usage.
 
-The migration is complete only when the deployed application proves session reload, artifact preservation, real MCP queries, provider failure behavior, and human-review provenance. Configuration presence alone is not proof.
+The hosted agent/media boundary is deployed. Product migration is complete only when the remaining checkpoints prove session reload, artifact preservation, real MCP queries, provider failure behavior, and human-review provenance.

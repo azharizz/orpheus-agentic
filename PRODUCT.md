@@ -89,7 +89,7 @@ Status here is based on the V2 code and recorded project history available when 
 | Grafana | Local stack, exports, and successful official MCP Loki/Prometheus queries demonstrated | Show fresh-run evidence and an actual agent decision that uses it, not only historical backfill |
 | Human review | Candidate approval/rejection and assisted edits exist | Persist judgment against the exact candidate/audio hash; never transfer approval silently |
 | Generalization | Shoes, crackers, scanner and later heavy-bag experiments expose differing failure modes | No guarantee of arbitrary-video accuracy; keep a truly unseen validation case |
-| Managed cloud | GCP target confirmed; implementation not deployed | Package and validate the GCP application/agent/media path; do not claim Memory Bank or Grafana Cloud integration until tested |
+| Managed cloud | GCP project `orpheus-agentic` hosts Firebase Hosting, Cloud Run API/job, Agent Engine Runtime, managed Sessions, selective Memory Bank, and Grafana MCP | Provision Cloud SQL product records later in `project-cb6f73d4-12f4-4aa6-98b`; keep hosted runtime and media boundaries explicit |
 
 Earlier chat checklists overstate completion when they equate configuration or code presence with end-to-end success. In particular, a clean final recording-route test, fresh-run Grafana validation, and evidence-driven quality improvement remain acceptance work; this document does not mark them passed.
 
@@ -202,7 +202,7 @@ These are current prototype constraints, not permanent product goals. Read activ
 | Model calls | 180-second request timeout, 30,000-token requested output ceiling; provider may impose lower caps |
 | Inventory/arrangement | Up to 100 events/rows; inspect/fit batches up to 12; source options up to 24 |
 | Frames/review | Bounded adaptive windows; not exhaustive full-video inspection; current prompts impose earlier evidence-gathering cutoffs |
-| Memory | Persistent project-scoped ADK SQLite sessions; no automatic cross-project learning or Cloud Memory Bank |
+| Memory | Hosted project-scoped Agent Engine Sessions plus selective Memory Bank context/style entries; local development uses SQLite sessions and disables Memory Bank |
 | Soundtrack | Whole-track replacement; no promised selective denoising or dialogue/ambience preservation |
 | Scope | No guaranteed arbitrary-video accuracy, automatic material/perspective matching, sound generation, voice cloning, surround/Atmos certification, or complete DAW |
 
@@ -210,7 +210,7 @@ A call budget is not a currency budget. Long session history can increase input 
 
 ### Deployment and implementation boundary
 
-Existing runtime: Python/Google ADK, FFmpeg/NumPy, local web UI, OpenRouter provider integration, SQLite and local Grafana services. Production target: **GCP**, confirmed by the owner. The clean frontend framework, exact GCP runtime/services and migration packaging remain **undecided**. Preserve the working agent/media behavior; do not replace it solely to change hosting.
+Existing runtime: Python/Google ADK, FFmpeg/NumPy, local web UI, OpenRouter provider integration, SQLite and local Grafana services. Production target: **GCP**, confirmed by the owner. Hosted deployment uses Firebase Hosting, Cloud Run API/job, Agent Engine Runtime/Sessions, selective Memory Bank, private Grafana MCP, and Cloud Storage; Cloud SQL product records are deferred to `project-cb6f73d4-12f4-4aa6-98b`. Preserve the working agent/media behavior; do not replace it solely to change hosting.
 
 #### GCP deployment contract
 
