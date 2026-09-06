@@ -1,6 +1,6 @@
 # Orpheus GCP architecture
 
-Status: future deployment design. The current shipped baseline remains a local, single-user application. This document describes the GCP shape without claiming that the cloud migration is complete.
+Status: deployable boundary implemented; managed resources remain gated. The current shipped baseline remains a local, single-user application. This document describes the GCP shape without claiming that the cloud migration is complete.
 
 The design preserves the product contract in [`PRODUCT.md`](../PRODUCT.md): deterministic media processing, stateful ADK decisions, explicit paid work, human approval, redacted telemetry, and Grafana as an evidence plane.
 

@@ -13,16 +13,21 @@ from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 from google.adk.agents.run_config import RunConfig
 from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import DatabaseSessionService, VertexAiSessionService
 from google.genai import types
 
 from ..agent.workflow import build
 from ..agent.workflow_common import PROMPT_DIR, frame_parts, runtime_prompt
 from ..config import (
     DATA_DIR as ROOT,
+    DATABASE_URL,
+    AGENT_ENGINE_ID,
+    GOOGLE_CLOUD_LOCATION,
+    GOOGLE_CLOUD_PROJECT,
     MAX_CONTROLLER_CALLS,
     PACKAGE_DIR,
     TURN_TIMEOUT_SECONDS,
+    SESSION_BACKEND,
 )
 from ..domain.projects import atomic, frames, load, project_dir
 from ..ops import observability as obs
@@ -55,9 +60,13 @@ def failure_info(exc, phase, provider_exhausted=False):
 
 
 def session_service():
-    return DatabaseSessionService(
-        db_url="sqlite+aiosqlite:///" + str(ROOT / "sessions.sqlite")
-    )
+    if SESSION_BACKEND == "agent_engine":
+        return VertexAiSessionService(
+            project=GOOGLE_CLOUD_PROJECT,
+            location=GOOGLE_CLOUD_LOCATION,
+            agent_engine_id=AGENT_ENGINE_ID,
+        )
+    return DatabaseSessionService(db_url=DATABASE_URL)
 
 
 def active():

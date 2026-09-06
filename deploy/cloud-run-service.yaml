@@ -1,0 +1,61 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: orpheus-api
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/cloudsql-instances: INSTANCE_CONNECTION_NAME
+    spec:
+      serviceAccountName: orpheus-api@PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - image: IMAGE_URI
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ORPHEUS_RUNTIME_MODE
+              value: cloud_run
+            - name: ORPHEUS_PUBLIC_ORIGIN
+              value: https://orpheus-agentic.web.app
+            - name: ORPHEUS_ALLOWED_ORIGINS
+              value: https://orpheus-agentic.web.app
+            - name: ORPHEUS_ALLOWED_HOSTS
+              value: orpheus-agentic.web.app
+            - name: ORPHEUS_CLOUD_RUN_JOB
+              value: orpheus-worker
+            - name: GOOGLE_CLOUD_PROJECT
+              value: PROJECT_ID
+            - name: GOOGLE_CLOUD_LOCATION
+              value: us-central1
+            - name: ORPHEUS_PROVIDER_PROFILE
+              value: vertex
+            - name: ORPHEUS_PROVIDER_FAILOVER
+              value: "1"
+            - name: ORPHEUS_SESSION_BACKEND
+              value: agent_engine
+            - name: ORPHEUS_AGENT_ENGINE_ID
+              value: AGENT_ENGINE_ID
+            - name: ORPHEUS_DATA_DIR
+              value: /var/lib/orpheus
+            - name: ORPHEUS_STORAGE_BACKEND
+              value: gcs
+            - name: ORPHEUS_GCS_BUCKET
+              value: ORPHEUS_MEDIA_BUCKET
+            - name: ORPHEUS_SESSION_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: orpheus-session-database-url
+                  key: latest
+          volumeMounts:
+            - name: orpheus-data
+              mountPath: /var/lib/orpheus
+      volumes:
+        - name: orpheus-data
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            readOnly: false
+            volumeAttributes:
+              bucketName: ORPHEUS_MEDIA_BUCKET
+              mountOptions: implicit-dirs

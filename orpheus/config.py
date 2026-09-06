@@ -8,10 +8,62 @@ from dotenv import dotenv_values
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_DIR = Path(__file__).resolve().parent
 VALUES = {**dotenv_values(ROOT / ".env"), **os.environ}
+RUNTIME_MODE = str(VALUES.get("ORPHEUS_RUNTIME_MODE", "local")).lower()
+if RUNTIME_MODE not in {"local", "cloud_run"}:
+    raise ValueError("ORPHEUS_RUNTIME_MODE must be local or cloud_run")
 DATA_DIR = Path(VALUES.get("ORPHEUS_DATA_DIR", ROOT / "data")).expanduser().resolve()
 PROJECTS = DATA_DIR / "projects"
 OBSERVABILITY_DIR = DATA_DIR / "observability"
 OBSERVABILITY_ASSETS = ROOT / "observability"
+STORAGE_BACKEND = str(VALUES.get("ORPHEUS_STORAGE_BACKEND", "local")).lower()
+if STORAGE_BACKEND not in {"local", "gcs"}:
+    raise ValueError("ORPHEUS_STORAGE_BACKEND must be local or gcs")
+GCS_BUCKET = str(VALUES.get("ORPHEUS_GCS_BUCKET", "")).strip()
+DATABASE_URL = str(
+    VALUES.get("ORPHEUS_SESSION_DATABASE_URL", "sqlite+aiosqlite:///" + str(DATA_DIR / "sessions.sqlite"))
+).strip()
+GOOGLE_CLOUD_PROJECT = str(
+    VALUES.get("GOOGLE_CLOUD_PROJECT", VALUES.get("GCLOUD_PROJECT", ""))
+).strip()
+GOOGLE_CLOUD_LOCATION = str(VALUES.get("GOOGLE_CLOUD_LOCATION", "us-central1")).strip()
+PUBLIC_ORIGIN = str(
+    VALUES.get(
+        "ORPHEUS_PUBLIC_ORIGIN",
+        "http://127.0.0.1:8766" if RUNTIME_MODE == "local" else "",
+    )
+).rstrip("/")
+ALLOWED_ORIGINS = {
+    origin.strip().rstrip("/")
+    for origin in str(VALUES.get("ORPHEUS_ALLOWED_ORIGINS", PUBLIC_ORIGIN)).split(",")
+    if origin.strip()
+}
+ALLOWED_HOSTS = {
+    host.strip()
+    for host in str(VALUES.get("ORPHEUS_ALLOWED_HOSTS", "")).split(",")
+    if host.strip()
+}
+if PUBLIC_ORIGIN:
+    from urllib.parse import urlparse
+
+    public_host = urlparse(PUBLIC_ORIGIN).netloc
+    if public_host:
+        ALLOWED_HOSTS.add(public_host)
+JOB_NAME = str(VALUES.get("ORPHEUS_CLOUD_RUN_JOB", "")).strip()
+SESSION_BACKEND = str(VALUES.get("ORPHEUS_SESSION_BACKEND", "database")).lower()
+if SESSION_BACKEND not in {"database", "agent_engine"}:
+    raise ValueError("ORPHEUS_SESSION_BACKEND must be database or agent_engine")
+AGENT_ENGINE_ID = str(VALUES.get("ORPHEUS_AGENT_ENGINE_ID", "")).strip()
+MEMORY_BANK_ENABLED = str(VALUES.get("ORPHEUS_MEMORY_BANK", "0")).lower() in (
+    "1",
+    "true",
+    "yes",
+)
+if RUNTIME_MODE == "cloud_run" and not PUBLIC_ORIGIN:
+    raise ValueError("ORPHEUS_PUBLIC_ORIGIN is required in cloud_run mode")
+if STORAGE_BACKEND == "gcs" and not GCS_BUCKET:
+    raise ValueError("ORPHEUS_GCS_BUCKET is required for the gcs storage backend")
+if SESSION_BACKEND == "agent_engine" and not AGENT_ENGINE_ID:
+    raise ValueError("ORPHEUS_AGENT_ENGINE_ID is required for the agent_engine session backend")
 UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024
 MEDIA_SECONDS = 30
 SAMPLE_RATE = 48000
@@ -40,11 +92,18 @@ MAX_FILE_BYTES = UPLOAD_LIMIT_BYTES
 MAX_DURATION_S = MEDIA_SECONDS
 MAX_BRIEF_CHARS = 240
 MAX_FEEDBACK_CHARS = 500
-SERVER_PORT = int(VALUES.get("ORPHEUS_SERVER_PORT", 8766))
+SERVER_HOST = "0.0.0.0" if RUNTIME_MODE == "cloud_run" else "127.0.0.1"
+SERVER_PORT = int(
+    VALUES.get("PORT", 8080)
+    if RUNTIME_MODE == "cloud_run"
+    else VALUES.get("ORPHEUS_SERVER_PORT", 8766)
+)
 if not 1024 <= SERVER_PORT <= 65535:
     raise ValueError("Orpheus server port must be between 1024 and 65535")
 
-AUDIO_ENABLED = str(VALUES.get("ORPHEUS_AUDIO_ENABLED", "1")).lower() in (
+AUDIO_ENABLED = str(
+    VALUES.get("ORPHEUS_AUDIO_ENABLED", "0" if RUNTIME_MODE == "cloud_run" else "1")
+).lower() in (
     "1",
     "true",
     "yes",

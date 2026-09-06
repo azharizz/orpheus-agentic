@@ -7,6 +7,8 @@ from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler
 
+from .. import config
+
 
 class RequestError(ValueError):
     def __init__(self, message, status=400):
@@ -30,11 +32,20 @@ class LocalHandler(BaseHTTPRequestHandler):
         super().end_headers()
 
     def local_request(self, mutation=False):
-        host = f"127.0.0.1:{self.server.server_port}"
-        if self.headers.get_all("Host") != [host]:
-            raise RequestError("Open Orpheus using its 127.0.0.1 address.", 403)
-        if mutation and self.headers.get_all("Origin") != ["http://" + host]:
-            raise RequestError("A same-origin local request is required.", 403)
+        host = self.headers.get("Host", "").split(",", 1)[0].strip()
+        if config.RUNTIME_MODE == "local":
+            expected = f"127.0.0.1:{self.server.server_port}"
+            if host != expected:
+                raise RequestError("Open Orpheus using its 127.0.0.1 address.", 403)
+            if mutation and self.headers.get("Origin") != "http://" + expected:
+                raise RequestError("A same-origin local request is required.", 403)
+            return
+        if host not in config.ALLOWED_HOSTS:
+            raise RequestError("Request host is not configured for Orpheus.", 403)
+        if mutation:
+            origin = self.headers.get("Origin", "").rstrip("/")
+            if origin not in config.ALLOWED_ORIGINS:
+                raise RequestError("A configured same-origin request is required.", 403)
 
     def send_bytes(self, data, content_type, status=200):
         self.send_response(status)

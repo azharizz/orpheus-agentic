@@ -1,0 +1,56 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: orpheus-worker
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/cloudsql-instances: INSTANCE_CONNECTION_NAME
+    spec:
+      template:
+        spec:
+          serviceAccountName: orpheus-media@PROJECT_ID.iam.gserviceaccount.com
+          maxRetries: 0
+          timeoutSeconds: 3600
+          containers:
+            - image: IMAGE_URI
+              command: ["python", "-m", "orpheus.server.worker"]
+              env:
+                - name: ORPHEUS_RUNTIME_MODE
+                  value: cloud_run
+                - name: ORPHEUS_PROVIDER_PROFILE
+                  value: vertex
+                - name: ORPHEUS_PROVIDER_FAILOVER
+                  value: "1"
+                - name: ORPHEUS_SESSION_BACKEND
+                  value: agent_engine
+                - name: ORPHEUS_AGENT_ENGINE_ID
+                  value: AGENT_ENGINE_ID
+                - name: ORPHEUS_DATA_DIR
+                  value: /var/lib/orpheus
+                - name: ORPHEUS_STORAGE_BACKEND
+                  value: gcs
+                - name: ORPHEUS_GCS_BUCKET
+                  value: ORPHEUS_MEDIA_BUCKET
+                - name: ORPHEUS_SESSION_DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: orpheus-session-database-url
+                      key: latest
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 4Gi
+              volumeMounts:
+                - name: orpheus-data
+                  mountPath: /var/lib/orpheus
+          volumes:
+            - name: orpheus-data
+              csi:
+                driver: gcsfuse.run.googleapis.com
+                readOnly: false
+                volumeAttributes:
+                  bucketName: ORPHEUS_MEDIA_BUCKET
+                  mountOptions: implicit-dirs=false

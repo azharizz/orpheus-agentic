@@ -1,0 +1,2 @@
+-r requirements.txt
+google-cloud-aiplatform[agent_engines,adk]>=1.112,<2

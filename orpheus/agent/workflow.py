@@ -3,7 +3,7 @@
 from google.adk.agents import LlmAgent, LoopAgent
 from google.genai import types
 
-from ..config import MAX_CYCLES
+from ..config import CONTROLLER_MAX_TOKENS, MAX_CYCLES
 from . import perception
 from .provider import ControllerModel
 from .workflow_common import INSTRUCTION, MAPPED_INSTRUCTION, PERCEPTION_INSTRUCTION
@@ -66,6 +66,8 @@ def build(case, folder, log):
         before_model_callback=runtime.before_model,
         before_tool_callback=runtime.before_tool,
         after_tool_callback=runtime.after_tool,
-        generate_content_config=types.GenerateContentConfig(temperature=0.2),
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.2, max_output_tokens=CONTROLLER_MAX_TOKENS
+        ),
     )
     return LoopAgent(name="OrpheusLoop", sub_agents=[editor], max_iterations=MAX_CYCLES)

@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 import numpy as np
 
-from ..config import AUDIO_CALL_LIMIT, AUDIO_MAX_TOKENS, VALUES
+from ..config import AUDIO_CALL_LIMIT, AUDIO_ENABLED, AUDIO_MAX_TOKENS, VALUES
 from ..config import AUDIO_MODEL as MODEL
 from ..domain import media
 from ..domain.projects import atomic
@@ -368,11 +368,7 @@ class Perception:
         self.log = log
         self.calls = 0
         values = VALUES
-        self.enabled = str(values.get("ORPHEUS_AUDIO_ENABLED", "1")).lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        self.enabled = AUDIO_ENABLED
         self.model = values.get("ORPHEUS_AUDIO_MODEL", MODEL)
         if self.model != MODEL:
             raise ValueError("Only the approved Gemini audio model is enabled")

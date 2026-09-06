@@ -22,6 +22,7 @@ from .. import config
 from ..domain import media, projects, review, takes
 from ..ops import observability as obs
 from .http import LocalHandler, RequestError
+from . import jobs
 
 LOCK = threading.RLock()
 UPLOAD_LOCK = threading.Lock()
@@ -62,6 +63,9 @@ def start(project_id, feedback):
     with LOCK:
         if busy():
             raise BlockingIOError()
+        if config.RUNTIME_MODE == "cloud_run":
+            jobs.dispatch(project_id, feedback)
+            return
         with (projects.project_dir(project_id) / "worker.log").open("ab") as output:
             PROCESS = subprocess.Popen(
                 [
@@ -114,7 +118,9 @@ def project_list():
 
 def public_config():
     from ..agent.perception import MODEL
-    from ..agent.provider import MODELS
+    from ..agent.provider import MODELS, PROFILE, VERTEX_MODEL
+
+    controller_models = [VERTEX_MODEL] if PROFILE == "vertex" else list(MODELS)
 
     return {
         "max_file_bytes": config.MAX_FILE_BYTES,
@@ -123,10 +129,14 @@ def public_config():
         "max_feedback_chars": config.MAX_FEEDBACK_CHARS,
         "max_controller_calls": config.MAX_CONTROLLER_CALLS,
         "audio_enabled": config.AUDIO_ENABLED,
-        "controller_models": list(MODELS),
+        "controller_models": controller_models,
+        "provider_profile": PROFILE,
         "audio_model": MODEL,
-        "storage": "local",
-        "inference_destination": "Configured controller providers; audio observation through OpenRouter when enabled",
+        "storage": config.STORAGE_BACKEND,
+        "session_backend": config.SESSION_BACKEND,
+        "memory_bank": config.MEMORY_BANK_ENABLED,
+        "runtime_mode": config.RUNTIME_MODE,
+        "inference_destination": "Vertex Gemini with explicit OpenRouter failover when configured; audio observation through its configured provider",
     }
 
 
@@ -308,6 +318,11 @@ class Handler(LocalHandler):
             )
         except FileNotFoundError:
             self.send_json({"error": "Project or artifact not found."}, 404)
+        except RuntimeError:
+            self.send_json(
+                {"error": "Cloud worker is unavailable. Check deployment configuration."},
+                503,
+            )
         except (OSError, subprocess.SubprocessError):
             self.send_json(
                 {
@@ -405,8 +420,9 @@ def main():
         parser.error(
             "Build the interface first: cd frontend && npm ci && npm run build"
         )
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"Orpheus: http://127.0.0.1:{args.port}", flush=True)
+    server = ThreadingHTTPServer((config.SERVER_HOST, args.port), Handler)
+    display_host = "127.0.0.1" if config.RUNTIME_MODE == "local" else config.SERVER_HOST
+    print(f"Orpheus: http://{display_host}:{args.port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

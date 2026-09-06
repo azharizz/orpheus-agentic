@@ -31,10 +31,21 @@ The default tests use synthetic media and scripted model responses. They establi
 
 The Python package is grouped by responsibility: `orpheus/domain/` owns project and media operations, `orpheus/agent/` owns ADK workflow tools and prompts, `orpheus/server/` owns the loopback API and worker, and `orpheus/ops/` owns telemetry and Grafana helpers. The frontend follows the same boundary in `frontend/src/` with `app/`, `features/`, `media/`, `state/`, `styles/`, `assets/`, and `tests/` folders.
 
+## GCP deployment shape
+
+The repository now includes a Cloud Run compatible API image (`Dockerfile`), a Cloud Run Job manifest for long worker turns (`deploy/cloud-run-job.yaml`), and a read-only project preflight (`deploy/check.sh`). Build and publish the image, create the job, then deploy the API with `ORPHEUS_RUNTIME_MODE=cloud_run`, `ORPHEUS_CLOUD_RUN_JOB=orpheus-worker`, a configured public origin, Vertex credentials, and the Cloud SQL session URL. Keep `firebase.json` static-only until the API URL exists; merge `deploy/firebase.rewrite.example.json` into it only after the service is deployed.
+
+```sh
+docker build -t REGION-docker.pkg.dev/PROJECT_ID/orpheus/api:TAG .
+./deploy/check.sh PROJECT_ID
+```
+
+`deploy/check.sh` only reads project, billing, service, job, and SQL state. It never enables APIs, links billing, creates resources, or deploys an image. Google Cloud free-trial credits still require a billing account linked to the project before billable services such as Cloud Run, Agent Engine, or Cloud SQL can be provisioned.
+
 ## Grafana
 
 Provisioning, dashboards and Docker Compose are in `observability/`; the official MCP service is read-only. See `python -m orpheus.ops.grafana --help` for setup and collector commands. Credentials and the evidence outbox belong in runtime storage and must not be committed.
 
 ## Status
 
-Read `docs/STATUS.md` for verified checks and remaining work. GCP deployment is outside this local delivery scope.
+Read `docs/STATUS.md` for verified checks and remaining work. Read [`docs/GCP_ARCHITECTURE.md`](docs/GCP_ARCHITECTURE.md) for service boundaries, Grafana placement, contest constraints, and cost controls.
