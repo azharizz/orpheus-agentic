@@ -10,7 +10,7 @@ spec:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "1"
     spec:
-      serviceAccountName: grafana-mcp@PROJECT_ID.iam.gserviceaccount.com
+      serviceAccountName: grafana-mcp@orpheus-agentic.iam.gserviceaccount.com
       containers:
         - image: grafana/mcp-grafana@sha256:5114852743e450fe5186b6c1712419843eb4bd295e47e64c452c3aa0fab3c42e
           args:
@@ -23,7 +23,7 @@ spec:
             - datasource,prometheus,loki,tempo,dashboard,navigation,alerting
           env:
             - name: GRAFANA_URL
-              value: https://GRAFANA_STACK.grafana.net
+              value: https://crimsonagave361.grafana.net
             - name: GRAFANA_SERVICE_ACCOUNT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -32,7 +32,7 @@ spec:
             - name: MCP_GRAFANA_SERVER_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: grafana-mcp-caller-token
+                  name: mcp-caller-token
                   key: latest
           ports:
             - containerPort: 8000
