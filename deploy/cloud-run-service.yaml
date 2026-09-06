@@ -7,9 +7,8 @@ spec:
     metadata:
       annotations:
         run.googleapis.com/execution-environment: gen2
-        run.googleapis.com/cloudsql-instances: INSTANCE_CONNECTION_NAME
     spec:
-      serviceAccountName: orpheus-api@PROJECT_ID.iam.gserviceaccount.com
+      serviceAccountName: orpheus-api@orpheus-agentic.iam.gserviceaccount.com
       containers:
         - image: IMAGE_URI
           ports:
@@ -26,7 +25,7 @@ spec:
             - name: ORPHEUS_CLOUD_RUN_JOB
               value: orpheus-worker
             - name: GOOGLE_CLOUD_PROJECT
-              value: PROJECT_ID
+              value: orpheus-agentic
             - name: GOOGLE_CLOUD_LOCATION
               value: us-central1
             - name: ORPHEUS_PROVIDER_PROFILE
@@ -34,19 +33,23 @@ spec:
             - name: ORPHEUS_PROVIDER_FAILOVER
               value: "1"
             - name: ORPHEUS_SESSION_BACKEND
-              value: agent_engine
-            - name: ORPHEUS_AGENT_ENGINE_ID
-              value: AGENT_ENGINE_ID
+              value: database
+            - name: ORPHEUS_SESSION_DATABASE_URL
+              value: sqlite+aiosqlite:////tmp/sessions.sqlite
             - name: ORPHEUS_DATA_DIR
               value: /var/lib/orpheus
             - name: ORPHEUS_STORAGE_BACKEND
               value: gcs
             - name: ORPHEUS_GCS_BUCKET
-              value: ORPHEUS_MEDIA_BUCKET
-            - name: ORPHEUS_SESSION_DATABASE_URL
+              value: orpheus-agentic-media
+            - name: ORPHEUS_AUDIO_ENABLED
+              value: "0"
+            - name: AGENT_PROVIDER_URL
+              value: https://openrouter.ai/api/v1/chat/completions
+            - name: AGENT_PROVIDER_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: orpheus-session-database-url
+                  name: openrouter-api-key
                   key: latest
           volumeMounts:
             - name: orpheus-data
@@ -57,5 +60,5 @@ spec:
             driver: gcsfuse.run.googleapis.com
             readOnly: false
             volumeAttributes:
-              bucketName: ORPHEUS_MEDIA_BUCKET
+              bucketName: orpheus-agentic-media
               mountOptions: implicit-dirs

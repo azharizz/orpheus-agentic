@@ -7,11 +7,10 @@ spec:
     metadata:
       annotations:
         run.googleapis.com/execution-environment: gen2
-        run.googleapis.com/cloudsql-instances: INSTANCE_CONNECTION_NAME
     spec:
       template:
         spec:
-          serviceAccountName: orpheus-media@PROJECT_ID.iam.gserviceaccount.com
+          serviceAccountName: orpheus-media@orpheus-agentic.iam.gserviceaccount.com
           maxRetries: 0
           timeoutSeconds: 3600
           containers:
@@ -25,19 +24,29 @@ spec:
                 - name: ORPHEUS_PROVIDER_FAILOVER
                   value: "1"
                 - name: ORPHEUS_SESSION_BACKEND
-                  value: agent_engine
-                - name: ORPHEUS_AGENT_ENGINE_ID
-                  value: AGENT_ENGINE_ID
+                  value: database
+                - name: ORPHEUS_SESSION_DATABASE_URL
+                  value: sqlite+aiosqlite:////tmp/sessions.sqlite
+                - name: ORPHEUS_PUBLIC_ORIGIN
+                  value: https://orpheus-agentic.web.app
+                - name: GOOGLE_CLOUD_PROJECT
+                  value: orpheus-agentic
+                - name: GOOGLE_CLOUD_LOCATION
+                  value: us-central1
                 - name: ORPHEUS_DATA_DIR
                   value: /var/lib/orpheus
                 - name: ORPHEUS_STORAGE_BACKEND
                   value: gcs
                 - name: ORPHEUS_GCS_BUCKET
-                  value: ORPHEUS_MEDIA_BUCKET
-                - name: ORPHEUS_SESSION_DATABASE_URL
+                  value: orpheus-agentic-media
+                - name: ORPHEUS_AUDIO_ENABLED
+                  value: "0"
+                - name: AGENT_PROVIDER_URL
+                  value: https://openrouter.ai/api/v1/chat/completions
+                - name: AGENT_PROVIDER_API_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: orpheus-session-database-url
+                      name: openrouter-api-key
                       key: latest
               resources:
                 limits:
@@ -52,5 +61,5 @@ spec:
                 driver: gcsfuse.run.googleapis.com
                 readOnly: false
                 volumeAttributes:
-                  bucketName: ORPHEUS_MEDIA_BUCKET
+                  bucketName: orpheus-agentic-media
                   mountOptions: implicit-dirs=false
