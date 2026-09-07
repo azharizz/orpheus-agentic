@@ -1,6 +1,7 @@
 """Short-lived Cloud Storage transfer URLs for hosted media."""
 
 import re
+from os import environ
 from datetime import timedelta
 
 from .. import config
@@ -20,7 +21,8 @@ def _bucket():
 
 
 def _signed(project_id, object_name, method, content_type=None):
-    blob = _bucket().blob(object_name)
+    bucket = _bucket()
+    blob = bucket.blob(object_name)
     kwargs = {
         "version": "v4",
         "expiration": timedelta(minutes=15),
@@ -28,7 +30,29 @@ def _signed(project_id, object_name, method, content_type=None):
     }
     if content_type:
         kwargs["content_type"] = content_type
-    url = blob.generate_signed_url(**kwargs)
+    try:
+        url = blob.generate_signed_url(**kwargs)
+    except AttributeError:
+        # Cloud Run's metadata credentials cannot sign locally; use IAM signBlob.
+        from google.auth.transport.requests import Request
+
+        credentials = bucket.client._credentials
+        if hasattr(credentials, "with_scopes"):
+            credentials = credentials.with_scopes(
+                ["https://www.googleapis.com/auth/cloud-platform"]
+            )
+        credentials.refresh(Request())
+        email = getattr(credentials, "service_account_email", "")
+        if not email or email == "default":
+            email = environ.get("GOOGLE_SERVICE_ACCOUNT_EMAIL", "").strip()
+        if not email:
+            raise RuntimeError("A service-account email is required for signed URLs")
+        url = blob.generate_signed_url(
+            credentials=credentials,
+            service_account_email=email,
+            access_token=credentials.token,
+            **kwargs,
+        )
     return {
         "url": url,
         "method": method,

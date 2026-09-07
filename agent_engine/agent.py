@@ -15,12 +15,14 @@ JOB = os.environ.get("ORPHEUS_CLOUD_RUN_JOB", "orpheus-worker")
 MODEL = os.environ.get("ORPHEUS_VERTEX_MODEL", "gemini-3.0-flash")
 
 
-def submit_orpheus_worker(project_id: str, feedback: str) -> dict:
+def submit_orpheus_worker(project_id: str, feedback: str, run_key: str = "") -> dict:
     """Submit one explicitly requested, bounded media turn to Cloud Run Job."""
     if not re.fullmatch(r"[a-f0-9]{16}", project_id):
         return {"error": "Invalid project ID"}
     if not isinstance(feedback, str) or not 1 <= len(feedback) <= 500:
         return {"error": "Feedback must be 1 to 500 characters"}
+    if run_key and not re.fullmatch(r"[a-f0-9]{16,64}", run_key):
+        return {"error": "Invalid run key"}
     credentials, _ = default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
     url = (
         "https://run.googleapis.com/v2/projects/"
@@ -33,7 +35,16 @@ def submit_orpheus_worker(project_id: str, feedback: str) -> dict:
     )
     response = AuthorizedSession(credentials).post(
         url,
-        json={"overrides": {"containerOverrides": [{"args": [project_id, "--feedback", feedback]}]}},
+        json={
+            "overrides": {
+                "containerOverrides": [
+                    {
+                        "args": [project_id, "--feedback", feedback]
+                        + (["--run-key", run_key] if run_key else [])
+                    }
+                ]
+            }
+        },
         timeout=20,
     )
     if response.status_code >= 400:

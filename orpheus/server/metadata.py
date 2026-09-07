@@ -54,6 +54,23 @@ async def initialize():
             );
             CREATE INDEX IF NOT EXISTS orpheus_receipts_owner_project
                 ON orpheus_receipts(owner_id, project_id, created_at DESC);
+            CREATE TABLE IF NOT EXISTS orpheus_runs (
+                project_id TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                run_key TEXT NOT NULL,
+                status TEXT NOT NULL,
+                operation TEXT,
+                cancel_requested BOOLEAN NOT NULL DEFAULT false,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY(project_id, run_key)
+            );
+            CREATE INDEX IF NOT EXISTS orpheus_runs_active
+                ON orpheus_runs(owner_id, project_id, updated_at DESC)
+                WHERE status IN ('submitted', 'running');
+            CREATE UNIQUE INDEX IF NOT EXISTS orpheus_runs_one_active
+                ON orpheus_runs(project_id)
+                WHERE status IN ('submitted', 'running');
             """
         )
     except Exception as exc:
@@ -158,6 +175,123 @@ async def list_projects(owner_id):
         await connection.close()
 
 
+async def begin_run(project_id, owner_id, run_key):
+    if not enabled():
+        return {"created": True, "status": "submitted", "run_key": run_key}
+    if not all(isinstance(value, str) and value for value in (project_id, owner_id, run_key)):
+        raise MetadataError("Invalid run metadata")
+    connection = await _connect()
+    try:
+        async with connection.transaction():
+            active = await connection.fetchrow(
+                """
+                SELECT run_key, status, operation, cancel_requested
+                FROM orpheus_runs
+                WHERE project_id=$1 AND owner_id=$2 AND status IN ('submitted', 'running')
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                project_id,
+                owner_id,
+            )
+            if active:
+                return {"created": False, **dict(active)}
+            row = await connection.fetchrow(
+                """
+                INSERT INTO orpheus_runs(project_id, owner_id, run_key, status)
+                VALUES($1, $2, $3, 'submitted')
+                ON CONFLICT DO NOTHING
+                RETURNING run_key, status, operation, cancel_requested
+                """,
+                project_id,
+                owner_id,
+                run_key,
+            )
+            if row:
+                return {"created": True, **dict(row)}
+            active = await connection.fetchrow(
+                """
+                SELECT run_key, status, operation, cancel_requested
+                FROM orpheus_runs
+                WHERE project_id=$1 AND owner_id=$2 AND status IN ('submitted', 'running')
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                project_id,
+                owner_id,
+            )
+            return {"created": False, **dict(active)} if active else {"created": False}
+    except Exception as exc:
+        raise MetadataError("Cloud SQL run state unavailable") from exc
+    finally:
+        await connection.close()
+
+
+async def update_run(project_id, owner_id, run_key, status, operation=None, cancel_requested=None):
+    if not enabled():
+        return
+    connection = await _connect()
+    try:
+        await connection.execute(
+            """
+            UPDATE orpheus_runs
+            SET status=$4,
+                operation=COALESCE($5, operation),
+                cancel_requested=COALESCE($6, cancel_requested),
+                updated_at=now()
+            WHERE project_id=$1 AND owner_id=$2 AND run_key=$3
+            """,
+            project_id,
+            owner_id,
+            run_key,
+            status,
+            operation,
+            cancel_requested,
+        )
+    except Exception as exc:
+        raise MetadataError("Cloud SQL run update unavailable") from exc
+    finally:
+        await connection.close()
+
+
+async def cancel_run(project_id, owner_id, run_key):
+    if not enabled():
+        return None
+    connection = await _connect()
+    try:
+        return await connection.fetchrow(
+            """
+            UPDATE orpheus_runs SET status='canceled', cancel_requested=true, updated_at=now()
+            WHERE project_id=$1 AND owner_id=$2 AND run_key=$3 AND status IN ('submitted', 'running')
+            RETURNING operation
+            """,
+            project_id,
+            owner_id,
+            run_key,
+        )
+    except Exception as exc:
+        raise MetadataError("Cloud SQL cancellation update unavailable") from exc
+    finally:
+        await connection.close()
+
+
+async def run_canceled(project_id, owner_id, run_key):
+    if not enabled() or not run_key:
+        return False
+    connection = await _connect()
+    try:
+        return bool(
+            await connection.fetchval(
+                "SELECT cancel_requested FROM orpheus_runs WHERE project_id=$1 AND owner_id=$2 AND run_key=$3",
+                project_id,
+                owner_id,
+                run_key,
+            )
+        )
+    except Exception as exc:
+        raise MetadataError("Cloud SQL cancellation lookup unavailable") from exc
+    finally:
+        await connection.close()
+
+
 def sync_project_now(document, owner_id):
     if enabled():
         import asyncio
@@ -170,3 +304,26 @@ def sync_receipt_now(project_id, owner_id, kind, receipt_id, payload):
         import asyncio
 
         asyncio.run(sync_receipt(project_id, owner_id, kind, receipt_id, payload))
+
+
+def begin_run_now(project_id, owner_id, run_key):
+    if enabled():
+        import asyncio
+
+        return asyncio.run(begin_run(project_id, owner_id, run_key))
+    return {"created": True, "status": "submitted", "run_key": run_key}
+
+
+def update_run_now(project_id, owner_id, run_key, status, operation=None, cancel_requested=None):
+    if enabled():
+        import asyncio
+
+        asyncio.run(update_run(project_id, owner_id, run_key, status, operation, cancel_requested))
+
+
+def cancel_run_now(project_id, owner_id, run_key):
+    if enabled():
+        import asyncio
+
+        return asyncio.run(cancel_run(project_id, owner_id, run_key))
+    return None

@@ -52,8 +52,15 @@ def resolve(handler):
         owner = current
         handler.owner_cookie = None
     else:
-        owner = secrets.token_hex(16)
-        handler.owner_cookie = _pack(owner, int(time.time()))
+        if config.RUNTIME_MODE == "cloud_run":
+            # ponytail: Firebase rewrites may omit cookies; this app is intentionally single-user.
+            owner = hashlib.sha256(
+                ("orpheus-single-user:" + config.OWNER_SECRET).encode()
+            ).hexdigest()[:32]
+            handler.owner_cookie = _pack(owner, int(time.time()))
+        else:
+            owner = secrets.token_hex(16)
+            handler.owner_cookie = _pack(owner, int(time.time()))
     handler.owner_id = owner
     return owner
 

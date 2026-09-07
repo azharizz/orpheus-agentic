@@ -44,6 +44,22 @@ class JobChecks(unittest.TestCase):
         self.assertEqual(result["runtime"], "agent_engine")
         dispatch.assert_called_once_with("a" * 16, "run")
 
+    def test_cloud_runtime_falls_back_to_job_when_agent_engine_is_unavailable(self):
+        with (
+            patch.object(jobs.config, "RUNTIME_MODE", "cloud_run"),
+            patch.object(jobs.config, "GOOGLE_CLOUD_PROJECT", "orpheus-agentic"),
+            patch.object(jobs.config, "AGENT_ENGINE_ID", "engine"),
+            patch.object(jobs, "_dispatch_agent_engine", side_effect=RuntimeError),
+            patch.object(
+                jobs,
+                "_dispatch_cloud_run",
+                return_value={"status": "submitted", "operation": "op"},
+            ) as dispatch,
+        ):
+            result = jobs.dispatch("a" * 16, "run", "b" * 16)
+        self.assertEqual(result["runtime"], "cloud_run_fallback")
+        dispatch.assert_called_once_with("a" * 16, "run", "b" * 16)
+
     def test_submission_result_can_be_found_in_runtime_event(self):
         result = jobs._submission(
             {"event": {"tool": {"response": {"status": "submitted", "operation": "op"}}}}

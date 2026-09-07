@@ -13,7 +13,9 @@ if RUNTIME_MODE not in {"local", "cloud_run"}:
     raise ValueError("ORPHEUS_RUNTIME_MODE must be local or cloud_run")
 DATA_DIR = Path(VALUES.get("ORPHEUS_DATA_DIR", ROOT / "data")).expanduser().resolve()
 PROJECTS = DATA_DIR / "projects"
-OBSERVABILITY_DIR = DATA_DIR / "observability"
+OBSERVABILITY_DIR = Path(
+    VALUES.get("ORPHEUS_OBSERVABILITY_DIR", DATA_DIR / "observability")
+).expanduser().resolve()
 OBSERVABILITY_ASSETS = ROOT / "observability"
 STORAGE_BACKEND = str(VALUES.get("ORPHEUS_STORAGE_BACKEND", "local")).lower()
 if STORAGE_BACKEND not in {"local", "gcs"}:

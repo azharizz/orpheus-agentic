@@ -22,7 +22,9 @@ adk deploy agent_engine \
 The deployed reasoning engine ID is `5166883865117065216`. Set
 `ORPHEUS_SESSION_BACKEND=agent_engine` and
 `ORPHEUS_AGENT_ENGINE_ID=5166883865117065216` for the worker/API image so ADK
-uses `VertexAiSessionService`; local development continues to use the SQLite
+uses `VertexAiSessionService`; when managed Session quota is unavailable the
+hosted worker falls back to a durable `DatabaseSessionService` backed by the
+Cloud SQL metadata URL. Local development uses the SQLite
 `DatabaseSessionService`.
 
 Hosted Memory Bank is enabled selectively (`ORPHEUS_MEMORY_BANK=1`) for the
@@ -32,5 +34,5 @@ Grafana telemetry. Local development keeps the default disabled setting.
 
 The `adk deploy agent_engine` command requires a billing-enabled Google Cloud
 project and the relevant Agent Platform APIs. The deployment uses the linked
-GCP free-trial billing account; no paid media/inference parity run was started
-as part of this deployment.
+GCP free-trial billing account. The single capped parity run is recorded in
+`docs/STATUS.md`; no additional paid turn is part of deployment verification.

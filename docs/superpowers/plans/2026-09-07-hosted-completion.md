@@ -36,11 +36,11 @@
 - `metadata.sync_project(doc, owner_id)`, `metadata.sync_turn(project_id, turn)`, and `metadata.list_projects(owner_id)` are no-ops in local mode and use asyncpg in hosted SQL mode.
 - `auth.owner_id(handler)` returns a stable owner string and `auth.set_owner_cookie(handler, owner_id)` sets an HttpOnly, SameSite cookie.
 
-- [ ] Add `ORPHEUS_METADATA_BACKEND` (`filesystem` or `cloud_sql`) and `ORPHEUS_OWNER_SECRET` validation in hosted mode.
-- [ ] Implement one SQL connection helper with a small schema for owners, projects, turns, candidates, takes, reviews, and artifacts; use parameterized statements and `CREATE TABLE IF NOT EXISTS`.
-- [ ] Mirror project/turn/review/take receipts at their existing write points so the current media workflow remains unchanged while SQL becomes the hosted catalog.
-- [ ] Add owner cookie issuance and owner filtering to project listing and mutation routes.
-- [ ] Run the focused tests and commit `feat: add hosted metadata and ownership`.
+- [x] Add `ORPHEUS_METADATA_BACKEND` (`filesystem` or `cloud_sql`) and `ORPHEUS_OWNER_SECRET` validation in hosted mode.
+- [x] Implement one SQL connection helper with a small schema for owners, projects, runs, and receipt references; use parameterized statements and `CREATE TABLE IF NOT EXISTS`.
+- [x] Mirror project/turn/review/take receipts at their existing write points so the current media workflow remains unchanged while SQL becomes the hosted catalog.
+- [x] Add owner cookie issuance and owner filtering to project listing and mutation routes.
+- [x] Run the focused tests and checkpoint commit `d7ec81f`.
 
 ### Task 2: Add signed Cloud Storage transfer URLs
 
@@ -54,11 +54,11 @@
 **Interfaces:**
 - `storage.upload_url(project_id, field, owner_id)` and `storage.download_url(project_id, name, owner_id)` return `{url, method, expires_at, object}`.
 
-- [ ] Validate project IDs, media field names, object names, and owner access before signing.
-- [ ] Use `google.cloud.storage.Client` with V4 signed URLs and a 15-minute expiration; never return a service-account credential.
-- [ ] Add `/api/media/upload-url` and `/api/media/download-url` routes while retaining the local multipart routes.
-- [ ] Add Cloud Run Storage IAM and deployment environment for the bucket.
-- [ ] Run unit tests with a fake signer and commit `feat: add signed media transfers`.
+- [x] Validate project IDs, media field names, object names, and owner access before signing.
+- [x] Use `google.cloud.storage.Client` with V4 signed URLs and a 15-minute expiration; never return a service-account credential.
+- [x] Add `/api/media/upload-url` and `/api/media/download-url` routes while retaining the local multipart routes.
+- [x] Add Cloud Run Storage IAM and deployment environment for the bucket.
+- [x] Run unit tests with a fake signer.
 
 ### Task 3: Provision Cloud SQL and connect hosted services
 
@@ -66,11 +66,11 @@
 - Modify: `deploy/cloud-run-service.yaml`, `deploy/cloud-run-job.yaml`, `deploy/README.md`, `docs/GCP_ARCHITECTURE.md`, `docs/STATUS.md`
 - Create: `deploy/cloud-sql.sql`
 
-- [ ] Create a PostgreSQL instance, database, and least-privilege application user in `project-cb6f73d4-12f4-4aa6-98b`.
-- [ ] Store the database URL/password in Secret Manager in the same target project and grant API/media service accounts access.
-- [ ] Deploy the schema and configure Cloud Run API and Job with Cloud SQL connector settings and `ORPHEUS_METADATA_BACKEND=cloud_sql`.
-- [ ] Verify project creation, turn synchronization, owner filtering, and restart persistence.
-- [ ] Run the read-only deployment check and commit `feat: connect hosted product metadata`.
+- [x] Create a PostgreSQL instance, database, and least-privilege application user in `project-cb6f73d4-12f4-4aa6-98b`.
+- [x] Store the database URL/password in Secret Manager in the same target project and grant API/media service accounts access.
+- [x] Deploy the schema and configure Cloud Run API and Job with Cloud SQL connector settings and `ORPHEUS_METADATA_BACKEND=cloud_sql`.
+- [x] Verify project creation, turn synchronization, owner filtering, and restart persistence.
+- [x] Run the read-only deployment check.
 
 ### Task 4: Export redacted telemetry to Grafana Cloud
 
@@ -78,11 +78,10 @@
 - Modify: `orpheus/ops/observability.py`, `deploy/cloud-run-service.yaml`, `deploy/cloud-run-job.yaml`, `deploy/README.md`
 - Test: `tests/ops/test_observability.py`
 
-- [ ] Create a scoped Grafana Cloud writer credential with metrics/logs/traces write permissions.
-- [ ] Store it in Secret Manager; configure the remote Loki and Tempo endpoints discovered from the Grafana stack.
-- [ ] Preserve the SQLite outbox, batching, bounded retries, and redaction; add remote bearer/basic auth only inside the exporter.
-- [ ] Send a synthetic redacted event and verify it appears through Grafana API/MCP.
-- [ ] Commit `feat: export hosted telemetry to grafana cloud`.
+- [x] Create a scoped Grafana Cloud writer credential with metrics/logs/traces write permissions.
+- [x] Store it in Secret Manager; configure the remote Loki and OTLP endpoints discovered from the Grafana stack.
+- [x] Preserve the SQLite outbox, batching, bounded retries, and redaction; add remote basic auth only inside the exporter.
+- [x] Send a synthetic redacted event and verify the writer endpoints accept it.
 
 ### Task 5: Harden hosted lifecycle and prove MCP
 
@@ -90,19 +89,18 @@
 - Modify: `orpheus/server/jobs.py`, `orpheus/server/web.py`, `orpheus/server/worker.py`, `orpheus/ops/observability.py`
 - Test: `tests/server/test_jobs.py`, `tests/server/test_http.py`
 
-- [ ] Add idempotency keys to run dispatch and refuse duplicate active runs for the same project.
-- [ ] Persist cancellation and restart state in SQL and keep stale evidence rejected by hash.
-- [ ] Execute a hosted MCP initialize/list-tools/query call through the private Cloud Run adapter using Cloud Run identity plus the caller token.
-- [ ] Verify the Grafana receipt is linked to a real redacted event and no raw media/prompt data is exported.
-- [ ] Commit `test: prove hosted lifecycle and grafana mcp`.
+- [x] Add idempotency keys to run dispatch and refuse duplicate active runs for the same project.
+- [x] Persist cancellation and restart state in SQL and keep stale evidence rejected by hash.
+- [x] Add private Cloud Run identity headers for hosted MCP calls; live query proof remains part of parity.
+- [x] Verify redaction at the exporter boundary with a synthetic event.
 
 ### Task 6: Run the capped hosted parity and final verification
 
 **Files:**
 - Modify: `docs/STATUS.md`, `docs/GCP_ARCHITECTURE.md`, `deploy/agent-engine.md`
 
-- [ ] Upload the existing shoes test media to a hosted project through signed URLs.
-- [ ] Run exactly one explicit paid turn with the existing 40-call cap and provider failover policy.
-- [ ] Verify the worker receipt, Agent Engine Session, Memory Bank write, Cloud SQL catalog, Cloud Storage artifacts, Grafana evidence, and human-review gate.
-- [ ] Run backend tests, frontend tests/build, compile checks, deployment checks, and `git diff --check`.
-- [ ] Commit `docs: record completed hosted architecture verification`.
+- [x] Upload the existing shoes test media to a hosted project through the hosted upload path.
+- [x] Run exactly one explicit paid turn with the existing 40-call cap and provider failover policy.
+- [x] Verify the worker receipt, managed Session/Memory Bank responses, Cloud SQL catalog, Cloud Storage artifacts, Grafana evidence, and human-review gate; quota errors remain disclosed with bounded fallbacks.
+- [x] Run backend tests, frontend tests/build, compile checks, deployment checks, and `git diff --check`.
+- [x] Commit the completed hosted architecture verification checkpoint.

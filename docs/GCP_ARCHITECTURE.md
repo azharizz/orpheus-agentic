@@ -1,6 +1,6 @@
 # Orpheus GCP architecture
 
-Status: managed hosted slice deployed in `orpheus-agentic`; Cloud SQL product records remain deferred. The current target remains a local, single-user application.
+Status: managed hosted slice deployed in `orpheus-agentic`; the local single-user application remains the default operating mode.
 
 The design preserves the product contract in [`PRODUCT.md`](../PRODUCT.md): deterministic media processing, stateful ADK decisions, explicit paid work, human approval, redacted telemetry, and Grafana as an evidence plane.
 
@@ -65,7 +65,7 @@ Sessions are required for Orpheus's multi-step inspect → map → fit → rende
 
 - Use one stable session identity per authenticated user and Orpheus project.
 - Keep turn identity separate from session identity.
-- The hosted worker uses `VertexAiSessionService`; local development continues to use `DatabaseSessionService`.
+- The hosted worker uses `VertexAiSessionService`; when managed Session quota is unavailable it falls back to a durable `DatabaseSessionService` backed by the hosted Cloud SQL metadata URL. Local development uses the local SQLite `DatabaseSessionService`.
 - Store only the product-level run and artifact references in Cloud SQL.
 - Resume only a supported interrupted run; do not silently start a new paid turn.
 
@@ -99,6 +99,10 @@ Sessions and Memory Bank storage/operations are billable under the current prici
 
 Long work must be asynchronous. Cloud Run services have a finite request timeout, and Firebase Hosting rewrites to Cloud Run have a 60-second timeout. See [Cloud Run request timeout](https://docs.cloud.google.com/run/docs/configuring/request-timeout) and [Firebase Hosting with Cloud Run](https://firebase.google.com/docs/hosting/cloud-run).
 
+Hosted worker checkpoints for the GCS FUSE workspace are throttled to a two-second minimum and flushed at turn completion. This avoids mutating the same `events.jsonl` and turn receipt object for every model event while retaining the complete final receipt.
+
+The hosted API flushes its bounded telemetry outbox after mutations, and the worker flushes once after `turn_finished`; Cloud Run does not rely on a separate always-on collector process.
+
 Cloud Run Jobs fit FFmpeg/NumPy work because a job runs tasks and exits, with retries and task timeouts up to seven days. See [Cloud Run Jobs](https://cloud.google.com/run/docs/create-jobs).
 
 ## Data placement
@@ -115,7 +119,7 @@ Cloud SQL is not needed for Agent Engine Sessions. It is still the right source 
 - human review and approval hashes
 - job status, retries, deletion, and retention state
 
-Provision the PostgreSQL product store later in project `project-cb6f73d4-12f4-4aa6-98b`. Do not add Firestore alongside it without a concrete query or scaling requirement. Cloud Run supports connecting to Cloud SQL; see [Cloud Run and Cloud SQL for PostgreSQL](https://docs.cloud.google.com/sql/docs/postgres/connect-instance-cloud-run).
+The PostgreSQL product store is provisioned in project `project-cb6f73d4-12f4-4aa6-98b` and connected to the hosted API and Job through the Cloud SQL connector. Do not add Firestore alongside it without a concrete query or scaling requirement. Cloud Run supports connecting to Cloud SQL; see [Cloud Run and Cloud SQL for PostgreSQL](https://docs.cloud.google.com/sql/docs/postgres/connect-instance-cloud-run).
 
 Shared-core prices are useful for testing but are not a production availability choice: `db-f1-micro` is about `$0.0105/hour` and `db-g1-small` about `$0.035/hour`; shared-core types are outside the Cloud SQL SLA. See [Cloud SQL pricing](https://cloud.google.com/sql/pricing).
 
@@ -149,6 +153,8 @@ Keep the explicit provider adapter and failover for the post-contest product pro
 Grafana Cloud is an external managed observability stack, not an application container. Export redacted OpenTelemetry metrics, logs, and traces from the API, Agent Runtime, and media job. Run the open-source [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana) server as a private `grafana-mcp` Cloud Run service with a read-only Grafana service-account token. Agent Runtime calls this adapter over authenticated MCP.
 
 The deployed `grafana-mcp` Cloud Run service is the server-to-server path. It uses a read-only Grafana Viewer token from Secret Manager and caller authentication with a separate MCP token. The hosted endpoint (`https://mcp.grafana.com/mcp`) remains useful for an interactive developer/demo connection, but its OAuth flow requires a browser and has no service-account or machine-token option. See the [Grafana track authentication guidance](https://agentic-cinema.devpost.com/details/grafana-resources).
+
+The adapter is deployed with Cloud Run IAM invocation checks and only grants `roles/run.invoker` to the API and media service accounts; `allUsers` is not granted. The application still sends its separate MCP bearer token after the platform identity check. Grafana Cloud's managed datasource UIDs are configured as `grafanacloud-logs` and `grafanacloud-prom`; local Grafana keeps the `orpheus-loki` and `orpheus-prometheus` defaults.
 
 The application should link to Grafana for operational detail and query it for evidence. It must not imitate Grafana's UI or send raw audio, video, prompts, transcripts, or credentials. This follows the [Grafana boundary in the product contract](../PRODUCT.md#grafana-is-a-decision-input-not-decoration).
 
@@ -199,7 +205,7 @@ Do not add Firebase Authentication for the current private single-user deploymen
 - Grafana Cloud owns observability and the private `grafana-mcp` adapter supplies MCP evidence.
 - Firebase Hosting remains optional.
 
-This matches the GCP contract and removes the hosted worker's local SQLite session dependency. Cloud SQL product records remain the one deferred persistence migration.
+This matches the GCP contract. The hosted worker uses Agent Engine Sessions when available and a bounded durable Cloud SQL session fallback only when managed Session quota is unavailable. Cloud SQL remains the product catalog and the fallback session store; it does not replace managed Sessions when those are healthy.
 
 ### B. Lean hosted architecture — alternative
 
@@ -261,14 +267,14 @@ Add a queue when concurrent runs create real backpressure. Add a separate worker
 
 ## Migration checkpoints
 
-1. **Deferred:** provision Cloud SQL PostgreSQL in `project-cb6f73d4-12f4-4aa6-98b` for product records.
+1. **Done:** provision Cloud SQL PostgreSQL in `project-cb6f73d4-12f4-4aa6-98b` for product records.
 2. **Done:** create separate media and Agent Runtime staging buckets.
 3. **Done:** deploy the ADK coordinator to Agent Engine Runtime and use Agent Engine Sessions in the hosted worker.
 4. **Done:** package FFmpeg/NumPy as the Cloud Run media Job.
-5. **Remaining:** move project/artifact metadata from filesystem JSON to Cloud SQL; keep media in Cloud Storage.
-6. **Remaining:** add signed upload/download URLs and authenticated run ownership.
-7. **Partial:** Grafana MCP is connected with read-only queries; redacted Loki/Tempo writer export still needs configuration.
-8. **Remaining:** validate restart, cancellation, idempotency, stale evidence, deletion, and exact approval hashes in the hosted path.
-9. **Remaining:** run one capped hosted paid parity turn before expanding usage.
+5. **Done:** mirror hosted project, receipt, and run metadata to Cloud SQL; keep media in Cloud Storage.
+6. **Done:** expose signed upload/download URLs and authenticated run ownership.
+7. **Done:** Grafana MCP is private and connected with read-only queries; redacted Loki/OTLP writer export is configured.
+8. **Done:** idempotency and cancellation state are persisted; stale evidence remains rejected by hash and exact approval hashes are retained.
+9. **Done:** run one capped hosted paid parity turn; keep the result `review_required` until a human listens to the preferred candidate.
 
-The hosted agent/media boundary is deployed. Product migration is complete only when the remaining checkpoints prove session reload, artifact preservation, real MCP queries, provider failure behavior, and human-review provenance.
+The hosted agent/media boundary and product catalog are deployed. The capped parity turn proved artifact preservation, live MCP evidence, provider failure behavior, and human-review provenance. Managed Session/Memory Bank health remains subject to quota recheck because the run recorded a managed Session quota error and a Memory Bank write service error.

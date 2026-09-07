@@ -33,7 +33,7 @@ The Python package is grouped by responsibility: `orpheus/domain/` owns project 
 
 ## GCP deployment shape
 
-The repository includes a Cloud Run compatible API image (`Dockerfile`), a Cloud Run Job manifest for long worker turns (`deploy/cloud-run-job.yaml`), a managed Agent Engine coordinator (`agent_engine/`), and a read-only project preflight (`deploy/check.sh`). The hosted deployment uses Agent Engine Sessions, selective Memory Bank, Cloud Storage media, and a private Grafana MCP adapter; Cloud SQL product records remain deferred. Keep provider credentials server-side and use the values documented in [`deploy/README.md`](deploy/README.md).
+The repository includes a Cloud Run compatible API image (`Dockerfile`), a Cloud Run Job manifest for long worker turns (`deploy/cloud-run-job.yaml`), a managed Agent Engine coordinator (`agent_engine/`), and a read-only project preflight (`deploy/check.sh`). The hosted deployment uses Agent Engine Sessions with a bounded quota fallback, selective Memory Bank, Cloud Storage media, Cloud SQL product metadata, and a private Grafana MCP adapter. Keep provider credentials server-side and use the values documented in [`deploy/README.md`](deploy/README.md).
 
 ```sh
 docker build -t REGION-docker.pkg.dev/PROJECT_ID/orpheus/api:TAG .

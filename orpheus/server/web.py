@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import wave
+import uuid
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -53,7 +54,7 @@ def mutation():
             yield
 
 
-def start(project_id, feedback):
+def start(project_id, feedback, run_key=None):
     global PROCESS
     projects.load(project_id)
     if (
@@ -65,8 +66,11 @@ def start(project_id, feedback):
         if busy():
             raise BlockingIOError()
         if config.RUNTIME_MODE == "cloud_run":
-            jobs.dispatch(project_id, feedback)
-            return
+            return (
+                jobs.dispatch(project_id, feedback, run_key)
+                if run_key
+                else jobs.dispatch(project_id, feedback)
+            )
         with (projects.project_dir(project_id) / "worker.log").open("ab") as output:
             PROCESS = subprocess.Popen(
                 [
@@ -82,6 +86,7 @@ def start(project_id, feedback):
                 stderr=output,
                 start_new_session=True,
             )
+        return {"status": "submitted", "runtime": "local"}
 
 
 def project_list(owner_id="local"):
@@ -339,8 +344,18 @@ class Handler(LocalHandler):
                     self.upload(route)
                 finally:
                     UPLOAD_LOCK.release()
+                if config.RUNTIME_MODE == "cloud_run":
+                    try:
+                        obs.flush()
+                    except Exception:
+                        pass
                 return
             self.json_action(route)
+            if config.RUNTIME_MODE == "cloud_run":
+                try:
+                    obs.flush()
+                except Exception:
+                    pass
         except RequestError as error:
             self.send_json({"error": str(error)}, error.status)
         except BlockingIOError:
@@ -428,6 +443,7 @@ class Handler(LocalHandler):
     def json_action(self, route):
         if route not in (
             "/api/run",
+            "/api/run/cancel",
             "/api/review",
             "/api/assist",
             "/api/takes/fit",
@@ -443,10 +459,46 @@ class Handler(LocalHandler):
                 storage.upload_url(pid, data["field"], data.get("content_type", "application/octet-stream"))
             )
             return
+        if route == "/api/run/cancel":
+            pid, run_key = data["project_id"], data["run_key"]
+            assert_owner(self, pid)
+            if not re.fullmatch(r"[a-f0-9]{16,64}", run_key):
+                raise ValueError("Invalid run key")
+            row = metadata.cancel_run_now(pid, self.owner_id, run_key)
+            if not row:
+                raise RequestError("No active run matches this key.", 404)
+            canceled = jobs.cancel(row["operation"])
+            self.send_json({"canceled": True, "worker_cancel_requested": canceled})
+            return
         if route == "/api/run":
-            assert_owner(self, data["project_id"])
-            start(data["project_id"], data.get("feedback", DEFAULT_FEEDBACK))
-            self.send_json({"started": True, "project_id": data["project_id"]}, 202)
+            pid = data["project_id"]
+            assert_owner(self, pid)
+            run_key = data.get("idempotency_key") or uuid.uuid4().hex
+            if not re.fullmatch(r"[a-f0-9]{16,64}", run_key):
+                raise ValueError("Invalid idempotency key")
+            claim = metadata.begin_run_now(pid, self.owner_id, run_key)
+            if not claim["created"]:
+                raise RequestError("An active run already exists for this project.", 409)
+            try:
+                result = (
+                    start(pid, data.get("feedback", DEFAULT_FEEDBACK), run_key)
+                    if config.RUNTIME_MODE == "cloud_run"
+                    else start(pid, data.get("feedback", DEFAULT_FEEDBACK))
+                )
+                metadata.update_run_now(
+                    pid,
+                    self.owner_id,
+                    run_key,
+                    "submitted",
+                    result.get("operation") if isinstance(result, dict) else None,
+                )
+            except Exception:
+                metadata.update_run_now(pid, self.owner_id, run_key, "failed")
+                raise
+            self.send_json(
+                {"started": True, "project_id": pid, "run_key": run_key, **(result or {})},
+                202,
+            )
         elif route == "/api/grafana":
             assert_owner(self, data["project_id"])
             projects.load(data["project_id"])
@@ -502,6 +554,8 @@ def main():
     args = parser.parse_args()
     projects.ROOT.mkdir(parents=True, exist_ok=True)
     projects.PROJECTS.mkdir(parents=True, exist_ok=True)
+    if metadata.enabled():
+        asyncio.run(metadata.initialize())
     if not (STATIC / "index.html").is_file():
         parser.error(
             "Build the interface first: cd frontend && npm ci && npm run build"

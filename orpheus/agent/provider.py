@@ -63,7 +63,6 @@ def _openrouter_clients():
             max_tokens=CONTROLLER_MAX_TOKENS,
             extra_body={
                 "reasoning": {"enabled": False},
-                "provider": {"require_parameters": True},
             },
         )
         for name in MODELS

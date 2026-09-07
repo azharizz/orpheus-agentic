@@ -29,7 +29,9 @@ from ..config import (
     GOOGLE_CLOUD_LOCATION,
     GOOGLE_CLOUD_PROJECT,
     MAX_CONTROLLER_CALLS,
+    METADATA_DATABASE_URL,
     PACKAGE_DIR,
+    RUNTIME_MODE,
     TURN_TIMEOUT_SECONDS,
     SESSION_BACKEND,
     MEMORY_BANK_ENABLED,
@@ -73,6 +75,10 @@ def session_service():
             agent_engine_id=AGENT_ENGINE_ID,
         )
     return DatabaseSessionService(db_url=DATABASE_URL)
+
+
+def session_fallback_url():
+    return METADATA_DATABASE_URL if RUNTIME_MODE == "cloud_run" else DATABASE_URL
 
 
 def memory_service():
@@ -170,14 +176,15 @@ async def repair_interrupted_tools(service, session):
     return len(pending)
 
 
-async def execute(pid, feedback="Create a fitted alternative from these files."):
+async def execute(pid, feedback="Create a fitted alternative from these files.", run_key=""):
     with (ROOT / "worker.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("Another paid run is active")
+        await metadata.initialize()
         recover_orphaned_turns(pid)
-        return await run_turn(pid, feedback)
+        return await run_turn(pid, feedback, run_key)
 
 
 def recover_orphaned_turns(pid):
@@ -211,7 +218,7 @@ def recover_orphaned_turns(pid):
         atomic(folder / "project.json", manifest)
 
 
-async def run_turn(pid, feedback):
+async def run_turn(pid, feedback, run_key=""):
     if not isinstance(feedback, str) or not 1 <= len(feedback) <= 500:
         raise ValueError("Feedback is 1..500 characters")
     case = load(pid)
@@ -247,7 +254,22 @@ async def run_turn(pid, feedback):
     atomic(folder / "project.json", doc)
     if metadata.enabled():
         await metadata.sync_project(doc, doc.get("owner_id", "local"))
+        if run_key:
+            await metadata.update_run(pid, doc.get("owner_id", "local"), run_key, "running")
     provider_failed = False
+    event_rows = []
+    last_checkpoint = 0.0
+
+    def checkpoint(force=False):
+        nonlocal last_checkpoint
+        now = time.monotonic()
+        if RUNTIME_MODE == "cloud_run" and not force and now - last_checkpoint < 2:
+            return
+        (folder / "events.jsonl").write_text(
+            "".join(json.dumps(row, default=str) + "\n" for row in event_rows)
+        )
+        atomic(folder / (tid + "-turn.json"), turn)
+        last_checkpoint = now
 
     def log(event, **fields):
         nonlocal provider_failed
@@ -256,8 +278,7 @@ async def run_turn(pid, feedback):
         if event == "model_response":
             provider_failed = False
         row = {"ts": time.time(), "turn_id": tid, "event": event, **fields}
-        with (folder / "events.jsonl").open("a") as f:
-            f.write(json.dumps(row, default=str) + "\n")
+        event_rows.append(row)
         obs.emit(pid, event, fields, tid, row["ts"])
         if event == "loop_cycle":
             turn["cycles"] = fields["cycle"]
@@ -289,7 +310,7 @@ async def run_turn(pid, feedback):
                     [*turn.get("audio_evidence_ids", []), fields["evidence_id"]]
                 )
             )
-        atomic(folder / (tid + "-turn.json"), turn)
+        checkpoint()
         print(
             json.dumps(
                 {
@@ -314,17 +335,37 @@ async def run_turn(pid, feedback):
                 raise ValueError("Prepared input changed")
         phase = "session"
         memory = memory_service()
-        session = await service.get_session(
-            app_name=APP, user_id="local", session_id=pid
-        )
-        prior_events = len(session.events) if session else 0
-        if session is None:
-            session = await service.create_session(
-                app_name=APP,
-                user_id="local",
-                session_id=pid,
-                state={"candidates": [], "notes": []},
+        try:
+            session = await service.get_session(
+                app_name=APP, user_id="local", session_id=pid
             )
+            if session is None:
+                session = await service.create_session(
+                    app_name=APP,
+                    user_id="local",
+                    session_id=pid,
+                    state={"candidates": [], "notes": []},
+                )
+        except Exception as exc:
+            if SESSION_BACKEND != "agent_engine":
+                raise
+            log("session_backend_fallback", error_type=type(exc).__name__)
+            try:
+                await service.close()
+            except Exception:
+                pass
+            service = DatabaseSessionService(db_url=session_fallback_url())
+            session = await service.get_session(
+                app_name=APP, user_id="local", session_id=pid
+            )
+            if session is None:
+                session = await service.create_session(
+                    app_name=APP,
+                    user_id="local",
+                    session_id=pid,
+                    state={"candidates": [], "notes": []},
+                )
+        prior_events = len(session.events) if session else 0
         repaired = await repair_interrupted_tools(service, session)
         if repaired:
             log("interrupted_tools_recovered", count=repaired)
@@ -506,6 +547,7 @@ async def run_turn(pid, feedback):
                 turn["status"] = "failed"
                 turn["failure"] = failure_info(exc, "cleanup")
         turn["finished_at"] = time.time()
+        checkpoint(force=True)
         atomic(folder / (tid + "-turn.json"), turn)
         obs.emit(
             pid,
@@ -516,11 +558,21 @@ async def run_turn(pid, feedback):
             },
             tid,
         )
+        if RUNTIME_MODE == "cloud_run":
+            try:
+                obs.flush()
+            except Exception:
+                pass
         doc["status"] = turn["status"]
         atomic(folder / "project.json", doc)
         if metadata.enabled():
             try:
                 owner_id = doc.get("owner_id", "local")
+                run_status = turn["status"]
+                if run_key and await metadata.run_canceled(pid, owner_id, run_key):
+                    run_status = "canceled"
+                if run_key:
+                    await metadata.update_run(pid, owner_id, run_key, run_status)
                 await metadata.sync_turn(pid, turn, owner_id)
                 await metadata.sync_project(doc, owner_id)
             except metadata.MetadataError:
@@ -535,5 +587,6 @@ if __name__ == "__main__":
     ap.add_argument(
         "--feedback", default="Create a fitted alternative from these files."
     )
+    ap.add_argument("--run-key", default="")
     a = ap.parse_args()
-    asyncio.run(execute(a.project, a.feedback))
+    asyncio.run(execute(a.project, a.feedback, a.run_key))

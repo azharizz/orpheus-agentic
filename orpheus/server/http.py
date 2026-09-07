@@ -33,7 +33,6 @@ class LocalHandler(BaseHTTPRequestHandler):
         super().end_headers()
 
     def local_request(self, mutation=False):
-        auth.resolve(self)
         host = self.headers.get("Host", "").split(",", 1)[0].strip()
         if config.RUNTIME_MODE == "local":
             expected = f"127.0.0.1:{self.server.server_port}"
@@ -41,6 +40,7 @@ class LocalHandler(BaseHTTPRequestHandler):
                 raise RequestError("Open Orpheus using its 127.0.0.1 address.", 403)
             if mutation and self.headers.get("Origin") != "http://" + expected:
                 raise RequestError("A same-origin local request is required.", 403)
+            auth.resolve(self)
             return
         if host not in config.ALLOWED_HOSTS:
             raise RequestError("Request host is not configured for Orpheus.", 403)
@@ -48,6 +48,7 @@ class LocalHandler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin", "").rstrip("/")
             if origin not in config.ALLOWED_ORIGINS:
                 raise RequestError("A configured same-origin request is required.", 403)
+        auth.resolve(self)
 
     def send_bytes(self, data, content_type, status=200):
         self.send_response(status)

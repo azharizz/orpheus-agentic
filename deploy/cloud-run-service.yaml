@@ -7,6 +7,7 @@ spec:
     metadata:
       annotations:
         run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/cloudsql-instances: project-cb6f73d4-12f4-4aa6-98b:us-central1:orpheus-postgres
     spec:
       serviceAccountName: orpheus-api@orpheus-agentic.iam.gserviceaccount.com
       containers:
@@ -21,7 +22,7 @@ spec:
             - name: ORPHEUS_ALLOWED_ORIGINS
               value: https://orpheus-agentic.web.app
             - name: ORPHEUS_ALLOWED_HOSTS
-              value: orpheus-agentic.web.app
+              value: orpheus-agentic.web.app,orpheus-api-1777106151.us-central1.run.app,orpheus-api-3obekfb6xq-uc.a.run.app
             - name: ORPHEUS_CLOUD_RUN_JOB
               value: orpheus-worker
             - name: GOOGLE_CLOUD_PROJECT
@@ -44,10 +45,24 @@ spec:
               value: sqlite+aiosqlite:////tmp/sessions.sqlite
             - name: ORPHEUS_DATA_DIR
               value: /var/lib/orpheus
+            - name: ORPHEUS_OBSERVABILITY_DIR
+              value: /tmp/orpheus-observability
             - name: ORPHEUS_STORAGE_BACKEND
               value: gcs
             - name: ORPHEUS_GCS_BUCKET
               value: orpheus-agentic-media
+            - name: ORPHEUS_METADATA_BACKEND
+              value: cloud_sql
+            - name: ORPHEUS_METADATA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: orpheus-metadata-database-url
+                  key: latest
+            - name: ORPHEUS_OWNER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orpheus-owner-secret
+                  key: latest
             - name: ORPHEUS_AUDIO_ENABLED
               value: "0"
             - name: AGENT_PROVIDER_URL
@@ -58,10 +73,27 @@ spec:
               value: https://grafana-mcp-3obekfb6xq-uc.a.run.app/mcp
             - name: ORPHEUS_GRAFANA_DASHBOARD_URL
               value: https://crimsonagave361.grafana.net
+            - name: ORPHEUS_GRAFANA_LOKI_URL
+              value: https://logs-prod-032.grafana.net
+            - name: ORPHEUS_GRAFANA_LOKI_USER
+              value: "1777916"
+            - name: ORPHEUS_GRAFANA_LOKI_DATASOURCE_UID
+              value: grafanacloud-logs
+            - name: ORPHEUS_GRAFANA_PROMETHEUS_DATASOURCE_UID
+              value: grafanacloud-prom
+            - name: ORPHEUS_GRAFANA_OTLP_URL
+              value: https://otlp-gateway-prod-ap-southeast-2.grafana.net
+            - name: ORPHEUS_GRAFANA_OTLP_USER
+              value: "1820129"
             - name: ORPHEUS_GRAFANA_MCP_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: mcp-caller-token
+                  key: latest
+            - name: ORPHEUS_GRAFANA_TELEMETRY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-telemetry-token
                   key: latest
             - name: AGENT_PROVIDER_API_KEY
               valueFrom:

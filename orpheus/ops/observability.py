@@ -22,16 +22,47 @@ DB = STORE / "outbox.sqlite"
 def config():
     if os.environ.get("ORPHEUS_GRAFANA_ENABLED") == "0":
         return None
-    if CONFIG.exists():
-        return json.loads(CONFIG.read_text())
-    mcp_url = os.environ.get("ORPHEUS_GRAFANA_MCP_URL", "").strip().rstrip("/")
-    mcp_token = os.environ.get("ORPHEUS_GRAFANA_MCP_TOKEN", "").strip()
+    stored = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
+    mcp_url = str(
+        stored.get("mcp_url") or os.environ.get("ORPHEUS_GRAFANA_MCP_URL", "")
+    ).strip().rstrip("/")
+    mcp_token = str(
+        stored.get("mcp_token") or os.environ.get("ORPHEUS_GRAFANA_MCP_TOKEN", "")
+    ).strip()
     if not mcp_url or not mcp_token:
         return None
+    telemetry_token = str(
+        stored.get("telemetry_token")
+        or os.environ.get("ORPHEUS_GRAFANA_TELEMETRY_TOKEN", "")
+    ).strip()
     return {
         "mcp_url": mcp_url,
         "mcp_token": mcp_token,
-        "dashboard_url": os.environ.get("ORPHEUS_GRAFANA_DASHBOARD_URL", "").strip(),
+        "dashboard_url": stored.get("dashboard_url")
+        or os.environ.get("ORPHEUS_GRAFANA_DASHBOARD_URL", "").strip(),
+        "telemetry_token": telemetry_token,
+        "loki_url": stored.get("loki_url")
+        or os.environ.get("ORPHEUS_GRAFANA_LOKI_URL", "").strip().rstrip("/"),
+        "loki_user": str(
+            stored.get("loki_user")
+            or os.environ.get("ORPHEUS_GRAFANA_LOKI_USER", "1777916")
+        ).strip(),
+        "otlp_url": stored.get("otlp_url")
+        or os.environ.get("ORPHEUS_GRAFANA_OTLP_URL", "").strip().rstrip("/"),
+        "otlp_user": str(
+            stored.get("otlp_user")
+            or os.environ.get("ORPHEUS_GRAFANA_OTLP_USER", "1820129")
+        ).strip(),
+        "loki_datasource_uid": str(
+            stored.get("loki_datasource_uid")
+            or os.environ.get("ORPHEUS_GRAFANA_LOKI_DATASOURCE_UID", "orpheus-loki")
+        ).strip(),
+        "prometheus_datasource_uid": str(
+            stored.get("prometheus_datasource_uid")
+            or os.environ.get(
+                "ORPHEUS_GRAFANA_PROMETHEUS_DATASOURCE_UID", "orpheus-prometheus"
+            )
+        ).strip(),
     }
 
 
@@ -351,11 +382,30 @@ def flush(limit=500):
                 (limit,),
             ).fetchall()
         with httpx.Client(timeout=8, trust_env=False) as client:
-            for backend, flag, column in [
-                ("loki_url", 3, "logs_sent"),
-                ("tempo_url", 4, "trace_sent"),
-            ]:
-                if backend not in cfg:
+            destinations = [
+                (
+                    "loki_url",
+                    3,
+                    "logs_sent",
+                    "/loki/api/v1/push",
+                    httpx.BasicAuth(cfg.get("loki_user", ""), cfg["telemetry_token"])
+                    if cfg.get("telemetry_token")
+                    else None,
+                ),
+                (
+                    "otlp_url",
+                    4,
+                    "trace_sent",
+                    "/otlp/v1/traces",
+                    httpx.BasicAuth(cfg.get("otlp_user", ""), cfg["telemetry_token"])
+                    if cfg.get("telemetry_token")
+                    else None,
+                ),
+            ]
+            if cfg.get("tempo_url") and not cfg.get("otlp_url"):
+                destinations.append(("tempo_url", 4, "trace_sent", "/v1/traces", None))
+            for backend, flag, column, endpoint, auth in destinations:
+                if not cfg.get(backend):
                     continue
                 batch = [r for r in rows if not r[flag]]
                 if not batch:
@@ -379,7 +429,6 @@ def flush(limit=500):
                                 for k, v in streams.items()
                             ]
                         }
-                        endpoint = "/loki/api/v1/push"
                     else:
                         body = {
                             "resourceSpans": [
@@ -388,8 +437,7 @@ def flush(limit=500):
                                 for s in json.loads(r[2])["resourceSpans"]
                             ]
                         }
-                        endpoint = "/v1/traces"
-                    client.post(cfg[backend] + endpoint, json=body).raise_for_status()
+                    client.post(cfg[backend] + endpoint, json=body, auth=auth).raise_for_status()
                     with connect() as db:
                         db.executemany(
                             "UPDATE events SET " + column + "=1 WHERE id=?",
@@ -406,6 +454,23 @@ def flush(limit=500):
                             )
                         )
                     )
+            if cfg.get("otlp_url") and cfg.get("telemetry_token"):
+                try:
+                    body = _metrics_otlp()
+                    client.post(
+                        cfg["otlp_url"] + "/otlp/v1/metrics",
+                        json=body,
+                        auth=httpx.BasicAuth(
+                            cfg.get("otlp_user", "1820129"), cfg["telemetry_token"]
+                        ),
+                    ).raise_for_status()
+                    sent += len(body["resourceMetrics"][0]["scopeMetrics"][0]["metrics"])
+                except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+                    errors.append(
+                        type(exc).__name__
+                        + ":"
+                        + str(getattr(getattr(exc, "response", None), "status_code", "network"))
+                    )
     return {"sent": sent, "errors": errors, "pending": pending()}
 
 
@@ -414,6 +479,50 @@ def pending():
         return db.execute(
             "SELECT count(*) FROM events WHERE logs_sent=0 OR trace_sent=0"
         ).fetchone()[0]
+
+
+def _metrics_otlp():
+    metrics = []
+    timestamp = str(int(time.time() * 1e9))
+    for line in metrics_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        match = re.fullmatch(r'([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{([^}]*)\})?\s+([-+0-9.eE]+)', line)
+        if not match:
+            continue
+        name, labels, value = match.groups()
+        attributes = []
+        for label in (labels or "").split(","):
+            if not label:
+                continue
+            key, raw = label.split("=", 1)
+            attributes.append({"key": key, "value": {"stringValue": raw.strip('"')}})
+        metrics.append(
+            {
+                "name": name,
+                "gauge": {
+                    "dataPoints": [
+                        {
+                            "timeUnixNano": timestamp,
+                            "asDouble": float(value),
+                            "attributes": attributes,
+                        }
+                    ]
+                },
+            }
+        )
+    return {
+        "resourceMetrics": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "orpheus"}}
+                    ]
+                },
+                "scopeMetrics": [{"scope": {"name": "orpheus.metrics"}, "metrics": metrics}],
+            }
+        ]
+    }
 
 
 def metrics_text():
@@ -478,6 +587,19 @@ async def investigate(project_id, topic="history", candidate_id=""):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
+    headers = {"Authorization": "Bearer " + cfg["mcp_token"]}
+    if os.environ.get("ORPHEUS_RUNTIME_MODE") == "cloud_run":
+        try:
+            from google.auth.transport.requests import Request
+            from google.oauth2.id_token import fetch_id_token
+
+            audience = cfg["mcp_url"].split("/mcp", 1)[0]
+            headers["X-Serverless-Authorization"] = "Bearer " + fetch_id_token(
+                Request(), audience
+            )
+        except Exception as exc:
+            raise RuntimeError("Private Grafana MCP identity unavailable") from exc
+
     selector = (
         '{service_name="orpheus",event!="sound_envelope"} | json | project_id="'
         + project_id
@@ -501,7 +623,7 @@ async def investigate(project_id, topic="history", candidate_id=""):
     try:
         async with asyncio.timeout(45):
             async with streamablehttp_client(
-                cfg["mcp_url"], headers={"Authorization": "Bearer " + cfg["mcp_token"]}
+                cfg["mcp_url"], headers=headers
             ) as (read, write, _):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
@@ -518,14 +640,14 @@ async def investigate(project_id, topic="history", candidate_id=""):
                         }
                     arguments = (
                         {
-                            "datasourceUid": "orpheus-prometheus",
+                            "datasourceUid": cfg["prometheus_datasource_uid"],
                             "expr": 'up{job="orpheus"} or orpheus_export_pending or orpheus_provider_failures_total or ALERTS',
                             "queryType": "instant",
                             "endTime": "now",
                         }
                         if topic == "runtime"
                         else {
-                            "datasourceUid": "orpheus-loki",
+                            "datasourceUid": cfg["loki_datasource_uid"],
                             "logql": selector,
                             "limit": 100,
                             "format": "compact",
