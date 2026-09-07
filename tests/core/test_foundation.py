@@ -8,6 +8,16 @@ from orpheus.domain import projects
 
 
 class Foundation(unittest.TestCase):
+    def test_managed_session_events_have_invocation_ids(self):
+        from google.adk.events import EventActions
+        from orpheus.server.worker import session_event
+
+        event = session_event(
+            author="OrpheusEditor",
+            actions=EventActions(state_delta={"diagnostic": True}),
+        )
+        self.assertTrue(event.invocation_id)
+
     def test_preparation_discloses_source_truncation_and_no_audio(self):
         with tempfile.TemporaryDirectory() as d:
             folder = Path(d)

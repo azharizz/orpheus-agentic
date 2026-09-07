@@ -66,6 +66,7 @@ Sessions are required for Orpheus's multi-step inspect → map → fit → rende
 - Use one stable session identity per authenticated user and Orpheus project.
 - Keep turn identity separate from session identity.
 - The hosted worker uses `VertexAiSessionService`; when managed Session quota is unavailable it falls back to a durable `DatabaseSessionService` backed by the hosted Cloud SQL metadata URL. Local development uses the local SQLite `DatabaseSessionService`.
+- Internal events appended by the hosted worker carry an invocation ID required by the Agent Engine Sessions API. Managed Session create/get/append and Memory Bank add/search were smoke-tested against the deployed reasoning engine without a model turn.
 - Store only the product-level run and artifact references in Cloud SQL.
 - Resume only a supported interrupted run; do not silently start a new paid turn.
 
@@ -277,4 +278,4 @@ Add a queue when concurrent runs create real backpressure. Add a separate worker
 8. **Done:** idempotency and cancellation state are persisted; stale evidence remains rejected by hash and exact approval hashes are retained.
 9. **Done:** run one capped hosted paid parity turn; keep the result `review_required` until a human listens to the preferred candidate.
 
-The hosted agent/media boundary and product catalog are deployed. The capped parity turn proved artifact preservation, live MCP evidence, provider failure behavior, and human-review provenance. Managed Session/Memory Bank health remains subject to quota recheck because the run recorded a managed Session quota error and a Memory Bank write service error.
+The hosted agent/media boundary and product catalog are deployed. The capped parity turn proved artifact preservation, live MCP evidence, provider failure behavior, and human-review provenance. A later no-model smoke probe verified managed Session CRUD and Memory Bank add/search; the parity run's transient quota/server errors remain disclosed and still activate the durable fallback when they recur.

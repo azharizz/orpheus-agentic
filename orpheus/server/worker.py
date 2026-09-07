@@ -43,6 +43,10 @@ from . import metadata
 APP = "orpheus"
 
 
+def session_event(**kwargs):
+    return Event(invocation_id=uuid.uuid4().hex, **kwargs)
+
+
 def failure_info(exc, phase, provider_exhausted=False):
     """Safe categories only: exception text may contain credentials/media payloads."""
     if isinstance(exc, LlmCallsLimitExceededError):
@@ -154,7 +158,7 @@ async def repair_interrupted_tools(service, session):
     if pending:
         await service.append_event(
             session,
-            Event(
+            session_event(
                 author="OrpheusEditor",
                 content=types.Content(
                     role="user",
@@ -385,7 +389,7 @@ async def run_turn(pid, feedback, run_key=""):
         # Human UI receipts are a separate trust domain; model notes never create them.
         await service.append_event(
             session,
-            Event(
+            session_event(
                 author="OrpheusEditor",
                 actions=EventActions(
                     state_delta={
@@ -409,7 +413,7 @@ async def run_turn(pid, feedback, run_key=""):
         )
         await service.append_event(
             session,
-            Event(
+            session_event(
                 author="OrpheusEditor",
                 actions=EventActions(
                     state_delta={
@@ -445,7 +449,7 @@ async def run_turn(pid, feedback, run_key=""):
             log("grafana_startup", status=history["status"])
             await service.append_event(
                 session,
-                Event(
+                session_event(
                     author="OrpheusEditor",
                     actions=EventActions(state_delta={"grafana_startup": history}),
                 ),
