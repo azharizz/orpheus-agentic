@@ -353,18 +353,30 @@ async def run_turn(pid, family_id, feedback):
                     measurements={"range_duration_s": end - start},
                 )
         phase = "session"
-        session_id = pid + "-" + family_id + "-part"
-        session = await service.get_session(
-            app_name=APP, user_id="local", session_id=session_id
-        )
+        session_key = pid + "-" + family_id + "-part"
+        # Agent Engine assigns its own session ids, so keep our stable key mapped to one.
+        managed = config.SESSION_BACKEND == "agent_engine"
+        session_id = doc.get("session_ids", {}).get(session_key) if managed else session_key
+        session = None
+        if session_id:
+            try:
+                session = await service.get_session(
+                    app_name=APP, user_id="local", session_id=session_id
+                )
+            except Exception:
+                session = None
         prior_events = len(session.events) if session else 0
         if session is None:
             session = await service.create_session(
                 app_name=APP,
                 user_id="local",
-                session_id=session_id,
                 state={"candidates": [], "notes": []},
+                **({} if managed else {"session_id": session_key}),
             )
+            if managed:
+                doc.setdefault("session_ids", {})[session_key] = session.id
+                atomic(folder / "project.json", doc)
+        session_id = session.id
         repaired = await repair_interrupted_tools(service, session)
         if repaired:
             log("interrupted_tools_recovered", count=repaired)
@@ -596,7 +608,8 @@ async def run_turn(pid, family_id, feedback):
         if metadata.enabled():
             # The hosted workspace reads Cloud SQL; a finished turn must land there.
             try:
-                metadata.sync_project_now(doc, doc.get("owner_id") or "local")
+                # run_turn is already inside an event loop; await instead of asyncio.run.
+                await metadata.sync_project(doc, doc.get("owner_id") or "local")
             except Exception:
                 traceback.print_exc()
     return turn
