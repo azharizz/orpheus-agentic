@@ -504,7 +504,8 @@ class Handler(LocalHandler):
                     )
             else:
                 project = projects.intake(path, context=value("context"), style=value("style"), video_name=filename)
-                if project["seconds"] >= 300:
+                # Hosted requests must return well inside the 60s edge timeout.
+                if config.RUNTIME_MODE == "cloud_run" or project["seconds"] >= 300:
                     start_prepare(project["id"])
                 else:
                     project = projects.prepare(project["id"])
