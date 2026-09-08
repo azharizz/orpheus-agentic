@@ -677,8 +677,13 @@ def publish(url=None, token=None):
         raise ValueError("A Grafana base URL is required")
     if not token:
         raise ValueError("A Grafana service-account token is required")
+    path = OBSERVABILITY_ASSETS / "dashboards" / "foley.json"
+    committed = path.read_text() if path.exists() else None
     dashboard()
-    doc = json.loads((OBSERVABILITY_ASSETS / "dashboards" / "foley.json").read_text())
+    doc = json.loads(path.read_text())
+    if committed is not None:
+        # Publishing substitutes hosted datasource UIDs; the committed file stays local.
+        path.write_text(committed)
     doc.pop("id", None)
     with httpx.Client(base_url=base, timeout=30, trust_env=False) as client:
         response = client.post(

@@ -197,6 +197,24 @@ def project_list(owner_id="local"):
     return {"projects": rows, "running": busy(), "errors": errors}
 
 
+def assert_owner(handler, project_id):
+    if not re.fullmatch(r"[a-f0-9]{16}", project_id):
+        raise ValueError("Invalid project ID")
+    if metadata.enabled():
+        try:
+            owned = asyncio.run(metadata.owns(project_id, handler.owner_id))
+        except metadata.MetadataError as exc:
+            raise RequestError(str(exc), 503) from exc
+        if not owned:
+            raise FileNotFoundError(project_id)
+        return
+    if config.RUNTIME_MODE != "cloud_run":
+        return
+    case = projects.load(project_id)
+    if case.get("owner_id") not in (None, handler.owner_id):
+        raise FileNotFoundError(project_id)
+
+
 def public_config():
     from ..agent.perception import MODEL
     from ..agent.provider import FAILOVER, MODELS, PROFILE, VERTEX_MODELS, provider_config
@@ -414,9 +432,20 @@ class Handler(LocalHandler):
             match = re.fullmatch(r"/api/projects/([a-f0-9]{16})", route)
             if not match:
                 raise RequestError("Route not found.", 404)
+            project_id = match.group(1)
+            assert_owner(self, project_id)
             with mutation():
-                projects.remove(match.group(1))
-            self.send_json({"deleted": match.group(1)})
+                try:
+                    projects.remove(project_id)
+                except FileNotFoundError:
+                    # The record can outlive its media; the row must still go.
+                    pass
+                if metadata.enabled():
+                    try:
+                        metadata.delete_project_now(project_id, self.owner_id)
+                    except metadata.MetadataError as exc:
+                        raise RequestError(str(exc), 503) from exc
+            self.send_json({"deleted": project_id})
         except RequestError as error:
             self.send_json({"error": str(error)}, error.status)
         except BlockingIOError:

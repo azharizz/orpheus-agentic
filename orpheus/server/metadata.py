@@ -159,6 +159,35 @@ async def owns(project_id, owner_id):
         await connection.close()
 
 
+async def delete_project(project_id, owner_id):
+    """Remove a project and its dependent rows so a deletion is not resurrected."""
+    if not enabled():
+        return False
+    connection = await _connect()
+    try:
+        async with connection.transaction():
+            await connection.execute(
+                "DELETE FROM orpheus_receipts WHERE project_id=$1 AND owner_id=$2",
+                project_id,
+                owner_id,
+            )
+            await connection.execute(
+                "DELETE FROM orpheus_runs WHERE project_id=$1 AND owner_id=$2",
+                project_id,
+                owner_id,
+            )
+            removed = await connection.execute(
+                "DELETE FROM orpheus_projects WHERE project_id=$1 AND owner_id=$2",
+                project_id,
+                owner_id,
+            )
+        return removed.rsplit(" ", 1)[-1] != "0"
+    except Exception as exc:
+        raise MetadataError("Cloud SQL project deletion unavailable") from exc
+    finally:
+        await connection.close()
+
+
 async def list_projects(owner_id):
     if not enabled():
         return []
@@ -327,3 +356,11 @@ def cancel_run_now(project_id, owner_id, run_key):
 
         return asyncio.run(cancel_run(project_id, owner_id, run_key))
     return None
+
+
+def delete_project_now(project_id, owner_id):
+    if not enabled():
+        return False
+    import asyncio
+
+    return asyncio.run(delete_project(project_id, owner_id))
