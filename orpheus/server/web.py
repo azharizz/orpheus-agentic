@@ -155,7 +155,17 @@ def start(project_id, family_id, feedback):
             )
 
 
-def project_list():
+def project_list(owner_id="local"):
+    if metadata.enabled():
+        try:
+            rows = asyncio.run(metadata.list_projects(owner_id))
+        except metadata.MetadataError as exc:
+            raise RequestError(str(exc), 503) from exc
+        for doc in rows:
+            doc["turn_details"] = []
+            doc["assisted_candidates"] = []
+            doc["human_reviews"] = []
+        return {"projects": rows, "running": busy(), "errors": []}
     rows, errors = [], []
     for path in sorted(
         projects.PROJECTS.glob("*/project.json"),
@@ -261,7 +271,7 @@ class Handler(LocalHandler):
         elif route == "/api/config":
             self.send_json(public_config())
         elif route == "/api/projects":
-            self.send_json(project_list())
+            self.send_json(project_list(self.owner_id))
         elif route == "/api/observability":
             pid = parse_qs(parsed.query).get("project_id", [None])[0]
             self.send_json(obs.status() | {"gates": obs.gates(pid)})
@@ -354,6 +364,15 @@ class Handler(LocalHandler):
         try:
             self.local_request(mutation=True)
             route = urlparse(self.path).path
+            if route == "/api/media/staging-url":
+                data = self.read_json(3000)
+                self.send_json(
+                    storage.staging_upload_url(
+                        data["object"],
+                        data.get("content_type", "application/octet-stream"),
+                    )
+                )
+                return
             if route in ("/api/projects", "/api/takes"):
                 if not UPLOAD_LOCK.acquire(blocking=False):
                     raise RequestError(
@@ -430,12 +449,17 @@ class Handler(LocalHandler):
         )
         if suffix not in allowed:
             raise ValueError("Unsupported media extension")
+        staged = value("staged")
         with tempfile.TemporaryDirectory(prefix="orpheus-upload-") as temporary:
             path = Path(temporary) / (("audio" if take else "video") + suffix)
-            self.read_file(
-                config.AUDIO_UPLOAD_LIMIT_BYTES if take else config.VIDEO_UPLOAD_LIMIT_BYTES,
-                path,
-            )
+            if staged:
+                # Large media never crosses the API; the browser PUTs it to GCS first.
+                storage.fetch_staged(staged, path)
+            else:
+                self.read_file(
+                    config.AUDIO_UPLOAD_LIMIT_BYTES if take else config.VIDEO_UPLOAD_LIMIT_BYTES,
+                    path,
+                )
             if take:
                 family_id = value("family_id")
                 if not family_id:
@@ -456,6 +480,11 @@ class Handler(LocalHandler):
                 else:
                     project = projects.prepare(project["id"])
                     start_index(project["id"])
+                if metadata.enabled():
+                    try:
+                        metadata.sync_project_now(project, self.owner_id)
+                    except metadata.MetadataError as exc:
+                        raise RequestError(str(exc), 503) from exc
                 result = {"project": project}
         self.send_json(result, 201)
 
@@ -662,6 +691,8 @@ def main():
     args = parser.parse_args()
     projects.ROOT.mkdir(parents=True, exist_ok=True)
     projects.PROJECTS.mkdir(parents=True, exist_ok=True)
+    if metadata.enabled():
+        asyncio.run(metadata.initialize())
     if not (STATIC / "index.html").is_file():
         parser.error(
             "Build the interface first: cd frontend && npm ci && npm run build"

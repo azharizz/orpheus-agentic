@@ -65,10 +65,26 @@ function Import({ config, busy }) {
       style: String(form.get("style") || ""),
     });
     await action(async () => {
+      const type = file.type || "application/octet-stream";
+      if (config.storage === "gcs") {
+        const object = `${crypto.randomUUID().replaceAll("-", "")}${file.name.slice(file.name.lastIndexOf("."))}`;
+        const staging = await api("/api/media/staging-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ object, content_type: type }),
+        });
+        const put = await fetch(staging.url, {
+          method: "PUT",
+          headers: { "Content-Type": type },
+          body: file,
+        });
+        if (!put.ok) throw new Error("The picture could not be transferred to storage.");
+        query.set("staged", object);
+      }
       const result = await api(`/api/projects?${query}`, {
         method: "POST",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { "Content-Type": type },
+        body: config.storage === "gcs" ? null : file,
       });
       window.location.assign("/workspace?project=" + result.project.id);
     }, "Picture saved. Its sound index is preparing locally.");

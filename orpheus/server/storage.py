@@ -20,9 +20,8 @@ def _bucket():
     return storage.Client(project=config.GOOGLE_CLOUD_PROJECT).bucket(config.GCS_BUCKET)
 
 
-def _signed(project_id, object_name, method, content_type=None):
-    bucket = _bucket()
-    blob = bucket.blob(object_name)
+def _sign(blob, method, content_type=None):
+    bucket = blob.bucket
     kwargs = {
         "version": "v4",
         "expiration": timedelta(minutes=15),
@@ -53,8 +52,12 @@ def _signed(project_id, object_name, method, content_type=None):
             access_token=credentials.token,
             **kwargs,
         )
+    return url
+
+
+def _signed(project_id, object_name, method, content_type=None):
     return {
-        "url": url,
+        "url": _sign(_bucket().blob(object_name), method, content_type),
         "method": method,
         "expires_in_s": 900,
         "object": object_name,
@@ -80,3 +83,34 @@ def download_url(project_id, name):
     if not re.fullmatch(r"[a-f0-9]{16}", project_id) or not DOWNLOAD_RE.fullmatch(name):
         raise ValueError("Invalid media download target")
     return _signed(project_id, f"projects/{project_id}/{name}", "GET")
+
+
+STAGING_RE = re.compile(r"[a-f0-9]{32}\.(?:mp4|mov|webm|mkv|wav|mp3|m4a|flac|ogg)")
+
+
+def staging_upload_url(name, content_type="application/octet-stream"):
+    """Signed PUT for a browser upload that has no project record yet."""
+    if not STAGING_RE.fullmatch(name):
+        raise ValueError("Invalid staging upload target")
+    if not isinstance(content_type, str) or not re.fullmatch(
+        r"[a-zA-Z0-9.+-]+/[a-zA-Z0-9.+-]+", content_type
+    ):
+        raise ValueError("Invalid media content type")
+    blob = _bucket().blob("staging/" + name)
+    return {
+        "url": _sign(blob, "PUT", content_type),
+        "object": name,
+        "expires_in_s": 900,
+    }
+
+
+def fetch_staged(name, destination):
+    """Download a staged object into local/mounted storage, then remove it."""
+    if not STAGING_RE.fullmatch(name):
+        raise ValueError("Invalid staging upload target")
+    blob = _bucket().blob("staging/" + name)
+    if not blob.exists():
+        raise FileNotFoundError(name)
+    blob.download_to_filename(str(destination))
+    blob.delete()
+    return destination
