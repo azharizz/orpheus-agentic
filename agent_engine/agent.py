@@ -5,14 +5,16 @@ import re
 from urllib.parse import quote
 
 from google.adk.agents import LlmAgent
+from google.adk.models.google_llm import Gemini
 from google.auth import default
 from google.auth.transport.requests import AuthorizedSession
 
 
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "orpheus-agentic")
 REGION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+MODEL_LOCATION = os.environ.get("ORPHEUS_VERTEX_LOCATION", "global")
 JOB = os.environ.get("ORPHEUS_CLOUD_RUN_JOB", "orpheus-worker")
-MODEL = os.environ.get("ORPHEUS_VERTEX_MODEL", "gemini-3.0-flash")
+MODEL = os.environ.get("ORPHEUS_VERTEX_MODEL", "gemini-3.8-flash")
 
 
 def submit_orpheus_worker(project_id: str, feedback: str, run_key: str = "", family_id: str = "") -> dict:
@@ -59,7 +61,14 @@ def submit_orpheus_worker(project_id: str, feedback: str, run_key: str = "", fam
 root_agent = LlmAgent(
     name="orpheus_runtime",
     description="Coordinates explicit Orpheus media turns through the bounded Cloud Run worker.",
-    model=MODEL,
+    model=Gemini(
+        model=MODEL,
+        client_kwargs={
+            "vertexai": True,
+            "project": PROJECT,
+            "location": MODEL_LOCATION,
+        },
+    ),
     instruction=(
         "You are the Orpheus managed runtime coordinator. The API has already "
         "gated explicit confirmation before it sends a request here. When a "
