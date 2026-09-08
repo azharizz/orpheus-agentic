@@ -12,3 +12,16 @@ This directory contains the deployable definitions for the hosted slice in GCP p
 8. Merge the `/api/**` rewrite from `firebase.rewrite.example.json` into `firebase.json` only after the API URL/service exists, then deploy Firebase Hosting.
 
 The current Grafana adapter is Cloud Run service `grafana-mcp`, with its Grafana Viewer token and MCP caller token stored in Secret Manager. Keep Cloud Run IAM invocation checks enabled and grant `roles/run.invoker` only to `orpheus-api` and `orpheus-media`; do not grant `allUsers`. Do not put either token in Firebase or frontend configuration. Hosted Grafana datasource UIDs are `grafanacloud-logs` and `grafanacloud-prom`; local defaults remain `orpheus-loki` and `orpheus-prometheus`. Cloud SQL product records use the PostgreSQL instance in `project-cb6f73d4-12f4-4aa6-98b`.
+
+## Browser uploads
+
+Large media never crosses the API: the browser asks for a signed PUT
+(`/api/media/staging-url`) and sends the file straight to Cloud Storage.
+That cross-origin PUT needs bucket CORS and a service account that can
+sign URLs.
+
+```sh
+gcloud storage buckets update gs://BUCKET --cors-file=deploy/gcs-cors.json
+gcloud iam service-accounts add-iam-policy-binding SA_EMAIL \
+  --member="serviceAccount:SA_EMAIL" --role="roles/iam.serviceAccountTokenCreator"
+```
