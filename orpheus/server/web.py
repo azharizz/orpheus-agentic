@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .. import config
 from ..domain import families, family_agent, media, movie, projects, review, takes
 from ..ops import observability as obs
+from . import auth, jobs, metadata, storage
 from .http import LocalHandler, RequestError
 
 LOCK = threading.RLock()
@@ -133,6 +134,8 @@ def start(project_id, family_id, feedback):
     with LOCK:
         if busy():
             raise BlockingIOError()
+        if config.RUNTIME_MODE == "cloud_run":
+            return jobs.dispatch(project_id, feedback, family_id=family_id)
         with (projects.project_dir(project_id) / "worker.log").open("ab") as output:
             PROCESS = subprocess.Popen(
                 [
@@ -186,7 +189,7 @@ def project_list():
 
 def public_config():
     from ..agent.perception import MODEL
-    from ..agent.provider import MODELS, provider_config
+    from ..agent.provider import FAILOVER, MODELS, PROFILE, VERTEX_MODEL, provider_config
 
     try:
         provider_config()
@@ -204,11 +207,19 @@ def public_config():
         "max_feedback_chars": config.MAX_FEEDBACK_CHARS,
         "max_controller_calls": config.MAX_CONTROLLER_CALLS,
         "audio_enabled": config.AUDIO_ENABLED,
-        "controller_models": list(MODELS),
+        "controller_models": [VERTEX_MODEL] if PROFILE == "vertex" else list(MODELS),
         "provider_ready": provider_ready,
-        "audio_model": MODEL,
-        "storage": "local",
-        "inference_destination": "Configured controller providers; audio observation through OpenRouter when enabled",
+        "audio_model": MODEL if config.AUDIO_ENABLED else None,
+        "storage": config.STORAGE_BACKEND,
+        "runtime_mode": config.RUNTIME_MODE,
+        "provider_profile": PROFILE,
+        "session_backend": config.SESSION_BACKEND,
+        "memory_bank": config.MEMORY_BANK_ENABLED,
+        "inference_destination": (
+            "Google Gemini through Vertex AI only"
+            if PROFILE == "vertex" and not FAILOVER
+            else "Configured controller providers; audio observation through OpenRouter when enabled"
+        ),
     }
 
 
@@ -653,7 +664,7 @@ def main():
         parser.error(
             "Build the interface first: cd frontend && npm ci && npm run build"
         )
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = ThreadingHTTPServer((config.SERVER_HOST, args.port), Handler)
     start_observability()
     print(f"Orpheus: http://127.0.0.1:{args.port}", flush=True)
     try:

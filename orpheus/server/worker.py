@@ -14,11 +14,15 @@ from google.adk.agents.invocation_context import LlmCallsLimitExceededError
 from google.adk.agents.run_config import RunConfig
 from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
-from google.adk.sessions import DatabaseSessionService
+from google.adk.memory.vertex_ai_memory_bank_service import (
+    VertexAiMemoryBankService,
+)
+from google.adk.sessions import DatabaseSessionService, VertexAiSessionService
 from google.genai import types
 
 from ..agent.workflow import build
 from ..agent.workflow_common import PROMPT_DIR, frame_parts, runtime_prompt
+from .. import config
 from ..config import (
     DATA_DIR as ROOT,
     MAX_CONTROLLER_CALLS,
@@ -93,8 +97,28 @@ def failure_info(exc, phase, provider_exhausted=False):
 
 
 def session_service():
-    return DatabaseSessionService(
-        db_url="sqlite+aiosqlite:///" + str(ROOT / "sessions.sqlite")
+    if config.SESSION_BACKEND == "agent_engine":
+        return VertexAiSessionService(
+            project=config.GOOGLE_CLOUD_PROJECT,
+            location=config.GOOGLE_CLOUD_LOCATION,
+            agent_engine_id=config.AGENT_ENGINE_ID,
+        )
+    return DatabaseSessionService(db_url=session_fallback_url())
+
+
+def session_fallback_url():
+    if config.RUNTIME_MODE == "cloud_run" and config.METADATA_DATABASE_URL:
+        return config.METADATA_DATABASE_URL
+    return "sqlite+aiosqlite:///" + str(ROOT / "sessions.sqlite")
+
+
+def memory_service():
+    if not config.MEMORY_BANK_ENABLED:
+        return None
+    return VertexAiMemoryBankService(
+        project=config.GOOGLE_CLOUD_PROJECT,
+        location=config.GOOGLE_CLOUD_LOCATION,
+        agent_engine_id=config.AGENT_ENGINE_ID,
     )
 
 

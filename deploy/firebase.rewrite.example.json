@@ -1,0 +1,13 @@
+{
+  "hosting": {
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "orpheus-api",
+          "region": "us-central1"
+        }
+      }
+    ]
+  }
+}
