@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import secrets
 import subprocess
 import threading
@@ -667,6 +668,29 @@ def dashboard():
     (folder / "foley.json").write_text(json.dumps(doc, indent=2))
 
 
+def publish(url=None, token=None):
+    """Upload the generated dashboard to a Grafana instance over its HTTP API."""
+    cfg = obs.config() or {}
+    base = (url or cfg.get("dashboard_url") or "").split("/d/")[0].rstrip("/")
+    token = token or os.environ.get("GRAFANA_SERVICE_ACCOUNT_TOKEN", "").strip()
+    if not base:
+        raise ValueError("A Grafana base URL is required")
+    if not token:
+        raise ValueError("A Grafana service-account token is required")
+    dashboard()
+    doc = json.loads((OBSERVABILITY_ASSETS / "dashboards" / "foley.json").read_text())
+    doc.pop("id", None)
+    with httpx.Client(base_url=base, timeout=30, trust_env=False) as client:
+        response = client.post(
+            "/api/dashboards/db",
+            headers={"Authorization": "Bearer " + token},
+            json={"dashboard": doc, "overwrite": True, "message": "Orpheus evidence plane"},
+        )
+        response.raise_for_status()
+        body = response.json()
+    return {"status": "ok", "url": base + body.get("url", ""), "version": body.get("version")}
+
+
 def check_committed():
     """Dashboard-as-code: the checked-in JSON must match what dashboard() generates."""
     path = OBSERVABILITY_ASSETS / "dashboards" / "foley.json"
@@ -805,7 +829,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "action",
-        choices=["setup", "collect", "backfill", "flush", "stop", "check", "report"],
+        choices=["setup", "collect", "backfill", "flush", "stop", "check", "report", "publish"],
     )
     parser.add_argument("snapshot_id", nargs="?")
     args = parser.parse_args()
@@ -817,6 +841,8 @@ if __name__ == "__main__":
         backfill()
     elif args.action == "stop":
         compose("stop")
+    elif args.action == "publish":
+        print(json.dumps(publish(), indent=2))
     elif args.action == "check":
         result = check_committed()
         print(json.dumps(result, indent=2))
