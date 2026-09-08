@@ -7,6 +7,7 @@ import hashlib
 import json
 import subprocess
 import time
+import traceback
 import uuid
 
 import numpy as np
@@ -556,7 +557,8 @@ async def run_turn(pid, family_id, feedback):
         log("failed", **turn["failure"])
     finally:
         for resource in (runner, service):
-            if resource is None:
+            # VertexAiSessionService has no close(); only shut down what can be shut down.
+            if resource is None or not hasattr(resource, "close"):
                 continue
             try:
                 await resource.close()
@@ -589,6 +591,14 @@ async def run_turn(pid, family_id, feedback):
         )
         doc["status"] = turn["status"]
         atomic(folder / "project.json", doc)
+        from . import metadata
+
+        if metadata.enabled():
+            # The hosted workspace reads Cloud SQL; a finished turn must land there.
+            try:
+                metadata.sync_project_now(doc, doc.get("owner_id") or "local")
+            except Exception:
+                traceback.print_exc()
     return turn
 
 
