@@ -26,14 +26,59 @@ COVERAGE_PAGE = 100
 LIVE_STALE_S = 120
 
 
-def config():
-    if os.environ.get("ORPHEUS_GRAFANA_ENABLED") == "0" or not CONFIG.exists():
-        return None
-    value = json.loads(CONFIG.read_text())
-    url = value.get("dashboard_url")
+def _dashboard_url(url):
     if url and not url.endswith(DASHBOARD_PATH):
-        value["dashboard_url"] = url.split("/d/")[0] + DASHBOARD_PATH
-    return value
+        return url.split("/d/")[0] + DASHBOARD_PATH
+    return url
+
+
+def config():
+    if os.environ.get("ORPHEUS_GRAFANA_ENABLED") == "0":
+        return None
+    stored = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
+    mcp_url = str(
+        stored.get("mcp_url") or os.environ.get("ORPHEUS_GRAFANA_MCP_URL", "")
+    ).strip().rstrip("/")
+    mcp_token = str(
+        stored.get("mcp_token") or os.environ.get("ORPHEUS_GRAFANA_MCP_TOKEN", "")
+    ).strip()
+    if not mcp_url or not mcp_token:
+        return None
+    telemetry_token = str(
+        stored.get("telemetry_token")
+        or os.environ.get("ORPHEUS_GRAFANA_TELEMETRY_TOKEN", "")
+    ).strip()
+    return {
+        "mcp_url": mcp_url,
+        "mcp_token": mcp_token,
+        "dashboard_url": _dashboard_url(
+            stored.get("dashboard_url")
+            or os.environ.get("ORPHEUS_GRAFANA_DASHBOARD_URL", "").strip()
+        ),
+        "telemetry_token": telemetry_token,
+        "loki_url": stored.get("loki_url")
+        or os.environ.get("ORPHEUS_GRAFANA_LOKI_URL", "").strip().rstrip("/"),
+        "loki_user": str(
+            stored.get("loki_user")
+            or os.environ.get("ORPHEUS_GRAFANA_LOKI_USER", "1777916")
+        ).strip(),
+        "otlp_url": stored.get("otlp_url")
+        or os.environ.get("ORPHEUS_GRAFANA_OTLP_URL", "").strip().rstrip("/"),
+        "otlp_user": str(
+            stored.get("otlp_user")
+            or os.environ.get("ORPHEUS_GRAFANA_OTLP_USER", "1820129")
+        ).strip(),
+        "loki_datasource_uid": str(
+            stored.get("loki_datasource_uid")
+            or os.environ.get("ORPHEUS_GRAFANA_LOKI_DATASOURCE_UID", "orpheus-loki")
+        ).strip(),
+        "prometheus_datasource_uid": str(
+            stored.get("prometheus_datasource_uid")
+            or os.environ.get(
+                "ORPHEUS_GRAFANA_PROMETHEUS_DATASOURCE_UID", "orpheus-prometheus"
+            )
+        ).strip(),
+    }
 
 
 def part_context(project_id, family_id=None, part_start_s=None, part_end_s=None):

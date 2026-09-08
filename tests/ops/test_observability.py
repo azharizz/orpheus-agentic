@@ -42,7 +42,11 @@ class EvidenceChecks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             path = folder / "local.json"
-            path.write_text(json.dumps({"dashboard_url": "http://127.0.0.1:13000/d/orpheus/foley-evidence"}))
+            path.write_text(json.dumps({
+                "dashboard_url": "http://127.0.0.1:13000/d/orpheus/foley-evidence",
+                "mcp_url": "http://127.0.0.1:18001/mcp",
+                "mcp_token": "test-token-not-real",
+            }))
             with patch.object(o, "CONFIG", path), patch.dict(os.environ, {"ORPHEUS_GRAFANA_ENABLED": "1"}):
                 value = o.config()
             self.assertTrue(value["dashboard_url"].endswith("/d/orpheus/agentic-foley-control-room"))

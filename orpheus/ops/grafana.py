@@ -14,6 +14,7 @@ from ..config import GRAFANA_PORTS, OBSERVABILITY_ASSETS, SERVER_PORT
 from . import observability as obs
 
 DATASOURCE_UIDS = {"orpheus-prometheus", "orpheus-loki", "orpheus-tempo"}
+CLOUD_DATASOURCE_UIDS = {"grafanacloud-prom", "grafanacloud-logs", "grafanacloud-traces"}
 
 
 def compose(*args):
@@ -127,7 +128,9 @@ def setup():
 def dashboard():
     panels = []
     orange, green, amber, rose = "#FF5A36", "#9DCFAD", "#EAC17C", "#FF8790"
-    prom, loki = "orpheus-prometheus", "orpheus-loki"
+    cfg = obs.config() or {}
+    prom = cfg.get("prometheus_datasource_uid") or "orpheus-prometheus"
+    loki = cfg.get("loki_datasource_uid") or "orpheus-loki"
     base = '{service_name="orpheus"} | json | project_id=~"$project"'
     part = (
         '{service_name="orpheus",event=~"family_range|sound_event|candidate|'
@@ -700,7 +703,7 @@ def validate(doc):
                 t.get("datasource") for t in panel.get("targets", [])
             ]:
                 uid = (source or {}).get("uid")
-                if uid and uid != "-- Mixed --" and uid not in DATASOURCE_UIDS:
+                if uid and uid != "-- Mixed --" and uid not in DATASOURCE_UIDS | CLOUD_DATASOURCE_UIDS:
                     raise ValueError(f"Unknown datasource uid {uid} in {panel.get('title')}")
             walk(panel.get("panels", []))
 
