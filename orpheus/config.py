@@ -13,7 +13,13 @@ PROJECTS = DATA_DIR / "projects"
 RUNTIME_MODE = str(VALUES.get("ORPHEUS_RUNTIME_MODE", "local")).lower()
 if RUNTIME_MODE not in {"local", "cloud_run"}:
     raise ValueError("ORPHEUS_RUNTIME_MODE must be local or cloud_run")
-OBSERVABILITY_DIR = DATA_DIR / "observability"
+# SQLite needs real file locking; a GCS FUSE mount cannot provide it.
+OBSERVABILITY_DIR = Path(
+    VALUES.get(
+        "ORPHEUS_OBSERVABILITY_DIR",
+        "/tmp/orpheus-observability" if RUNTIME_MODE == "cloud_run" else DATA_DIR / "observability",
+    )
+).expanduser()
 
 STORAGE_BACKEND = str(VALUES.get("ORPHEUS_STORAGE_BACKEND", "local")).lower()
 if STORAGE_BACKEND not in {"local", "gcs"}:

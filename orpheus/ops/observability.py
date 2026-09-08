@@ -657,10 +657,14 @@ def flush(limit=500):
 
 
 def pending():
-    with connect() as db:
-        return db.execute(
-            "SELECT count(*) FROM events WHERE logs_sent=0 OR trace_sent=0"
-        ).fetchone()[0]
+    # Telemetry must never take down a request; an unreadable outbox is unknown, not zero.
+    try:
+        with connect() as db:
+            return db.execute(
+                "SELECT count(*) FROM events WHERE logs_sent=0 OR trace_sent=0"
+            ).fetchone()[0]
+    except (sqlite3.Error, OSError):
+        return None
 
 
 def metrics_text():
