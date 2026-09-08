@@ -348,7 +348,7 @@ class HttpChecks(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["project"]["status"], "preparing")
-        start_prepare.assert_called_once_with(project["id"])
+        start_prepare.assert_called_once_with(project["id"], "local")
 
 
 if __name__ == "__main__":

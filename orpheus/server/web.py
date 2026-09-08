@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import traceback
 import time
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -93,7 +94,7 @@ def start_index(project_id):
         return True
 
 
-def start_prepare(project_id):
+def start_prepare(project_id, owner_id="local"):
     global PREP_THREAD
     with LOCK:
         if PREP_THREAD is not None and PREP_THREAD.is_alive():
@@ -102,8 +103,14 @@ def start_prepare(project_id):
         def run():
             global PREP_THREAD
             try:
-                projects.prepare(project_id)
+                prepared = projects.prepare(project_id)
+                if metadata.enabled():
+                    # The hosted list reads Cloud SQL; a finished project must land there.
+                    metadata.sync_project_now(prepared or projects.load(project_id), owner_id)
                 families.build_index(project_id)
+            except Exception:
+                # A silent worker thread is undebuggable in a hosted log.
+                traceback.print_exc()
             finally:
                 with LOCK:
                     PREP_THREAD = None
@@ -506,7 +513,7 @@ class Handler(LocalHandler):
                 project = projects.intake(path, context=value("context"), style=value("style"), video_name=filename)
                 # Hosted requests must return well inside the 60s edge timeout.
                 if config.RUNTIME_MODE == "cloud_run" or project["seconds"] >= 300:
-                    start_prepare(project["id"])
+                    start_prepare(project["id"], self.owner_id)
                 else:
                     project = projects.prepare(project["id"])
                     start_index(project["id"])
