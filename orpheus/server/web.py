@@ -189,7 +189,7 @@ def project_list():
 
 def public_config():
     from ..agent.perception import MODEL
-    from ..agent.provider import FAILOVER, MODELS, PROFILE, VERTEX_MODEL, provider_config
+    from ..agent.provider import FAILOVER, MODELS, PROFILE, VERTEX_MODELS, provider_config
 
     try:
         provider_config()
@@ -207,7 +207,7 @@ def public_config():
         "max_feedback_chars": config.MAX_FEEDBACK_CHARS,
         "max_controller_calls": config.MAX_CONTROLLER_CALLS,
         "audio_enabled": config.AUDIO_ENABLED,
-        "controller_models": [VERTEX_MODEL] if PROFILE == "vertex" else list(MODELS),
+        "controller_models": (list(VERTEX_MODELS) + (list(MODELS) if FAILOVER else [])) if PROFILE == "vertex" else list(MODELS),
         "provider_ready": provider_ready,
         "audio_model": MODEL if config.AUDIO_ENABLED else None,
         "storage": config.STORAGE_BACKEND,
@@ -218,6 +218,8 @@ def public_config():
         "inference_destination": (
             "Google Gemini through Vertex AI only"
             if PROFILE == "vertex" and not FAILOVER
+            else "Vertex Gemini first, then OpenRouter failover"
+            if PROFILE == "vertex"
             else "Configured controller providers; audio observation through OpenRouter when enabled"
         ),
     }

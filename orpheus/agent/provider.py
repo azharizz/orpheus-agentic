@@ -23,7 +23,19 @@ PROFILE = str(
 ).lower()
 if PROFILE not in {"vertex", "openrouter"}:
     raise ValueError("ORPHEUS_PROVIDER_PROFILE must be vertex or openrouter")
-VERTEX_MODEL = str(VALUES.get("ORPHEUS_VERTEX_MODEL", "gemini-3.0-flash"))
+VERTEX_MODELS = [
+    name.strip()
+    for name in str(
+        VALUES.get(
+            "ORPHEUS_VERTEX_MODELS",
+            "gemini-3.8-flash,gemini-3.7-flash,gemini-2.5-flash",
+        )
+    ).split(",")
+    if name.strip()
+]
+VERTEX_MODEL = VERTEX_MODELS[0]
+# Gemini 3.x publisher models resolve in the global endpoint, not a single region.
+VERTEX_LOCATION = str(VALUES.get("ORPHEUS_VERTEX_LOCATION", "global")).strip() or "global"
 FAILOVER = str(
     VALUES.get("ORPHEUS_PROVIDER_FAILOVER", "0" if RUNTIME_MODE == "cloud_run" else "1")
 ).lower() in (
@@ -71,17 +83,20 @@ def _openrouter_clients():
     ]
 
 
-def _vertex_client():
+def _vertex_clients():
     if not GOOGLE_CLOUD_PROJECT:
         raise ValueError("GOOGLE_CLOUD_PROJECT is required for the Vertex profile")
-    return Gemini(
-        model=VERTEX_MODEL,
-        client_kwargs={
-            "vertexai": True,
-            "project": GOOGLE_CLOUD_PROJECT,
-            "location": GOOGLE_CLOUD_LOCATION,
-        },
-    )
+    return [
+        Gemini(
+            model=name,
+            client_kwargs={
+                "vertexai": True,
+                "project": GOOGLE_CLOUD_PROJECT,
+                "location": VERTEX_LOCATION,
+            },
+        )
+        for name in VERTEX_MODELS
+    ]
 
 
 class ControllerModel(BaseLlm):
@@ -99,8 +114,8 @@ class ControllerModel(BaseLlm):
             self._names = [getattr(client, "model", MODELS[index]) for index, client in enumerate(clients)]
         else:
             if PROFILE == "vertex":
-                self._clients = [_vertex_client()]
-                self._names = [VERTEX_MODEL]
+                self._clients = _vertex_clients()
+                self._names = list(VERTEX_MODELS)
                 if FAILOVER and VALUES.get("AGENT_PROVIDER_API_KEY"):
                     self._clients.extend(_openrouter_clients())
                     self._names.extend(MODELS)
