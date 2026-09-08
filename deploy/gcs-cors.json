@@ -2,7 +2,7 @@
   {
     "origin": ["https://orpheus-agentic.web.app", "https://orpheus-agentic.firebaseapp.com", "http://127.0.0.1:8766"],
     "method": ["PUT", "GET", "HEAD"],
-    "responseHeader": ["Content-Type", "Content-Length", "x-goog-resumable"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Range", "x-goog-resumable"],
     "maxAgeSeconds": 3600
   }
 ]

@@ -354,6 +354,13 @@ class Handler(LocalHandler):
                         projects.project_dir(pid) / "frames",
                     )
                     poster.write_bytes(frames[0][1].read_bytes())
+        if config.STORAGE_BACKEND == "gcs" and name != "poster.jpg":
+            # Firebase Hosting cannot proxy large media; hand the browser a signed URL.
+            self.send_response(302)
+            self.send_header("Location", storage.download_url(pid, name)["url"])
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         self.send_file(projects.PROJECTS, relative)
 
     def audio_data(self, route, query):
