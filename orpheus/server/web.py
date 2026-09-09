@@ -97,6 +97,29 @@ def start_index(project_id):
         return True
 
 
+def start_render(project_id, family_id, take_id, owner_id="local"):
+    """A full-movie render cannot finish inside the hosted request window."""
+    global PREP_THREAD
+    with LOCK:
+        if PREP_THREAD is not None and PREP_THREAD.is_alive():
+            raise BlockingIOError()
+
+        def run():
+            global PREP_THREAD
+            try:
+                families.render(project_id, family_id, take_id)
+                if metadata.enabled():
+                    metadata.sync_project_now(projects.load(project_id), owner_id)
+            except Exception:
+                traceback.print_exc()
+            finally:
+                with LOCK:
+                    PREP_THREAD = None
+
+        PREP_THREAD = threading.Thread(target=run, daemon=True, name="orpheus-render")
+        PREP_THREAD.start()
+
+
 def start_prepare(project_id, owner_id="local"):
     global PREP_THREAD
     with LOCK:
@@ -729,11 +752,19 @@ class Handler(LocalHandler):
         elif route == "/api/families/render":
             with mutation():
                 family = families.get(data["project_id"], data["family_id"])
-                result = (
-                    family_agent.render_baseline(data["project_id"], data["family_id"], persist=True)
-                    if family.get("scope") == "part"
-                    else families.render(data["project_id"], data["family_id"], data.get("take_id"))
-                )
+                if family.get("scope") == "part":
+                    result = family_agent.render_baseline(
+                        data["project_id"], data["family_id"], persist=True
+                    )
+                elif config.RUNTIME_MODE == "cloud_run":
+                    start_render(
+                        data["project_id"], data["family_id"], data.get("take_id"), self.owner_id
+                    )
+                    result = {"status": "rendering", "family_id": data["family_id"]}
+                else:
+                    result = families.render(
+                        data["project_id"], data["family_id"], data.get("take_id")
+                    )
             self.send_json(result, 201)
         elif route == "/api/review":
             with mutation():
