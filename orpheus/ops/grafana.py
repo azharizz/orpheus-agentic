@@ -127,6 +127,17 @@ def setup():
     )
 
 
+STATUS = (
+    'function ostat(id,e){var b=document.getElementById(id);if(!b)return;'
+    'var w=window,k="__ostat_"+id;w[k]=w[k]||{n:0,last:""};'
+    'if(e){w[k].n++;w[k].last=new Date().toLocaleTimeString()+" \u00b7 "+e;}'
+    'if(!w[k].n){b.textContent="";return;}'
+    'b.style.color=e?"#EAC17C":"#6E747C";'
+    'b.textContent=(e?"read failing \u00b7 drawing may be stale \u00b7 ":"reads recovered \u00b7 ")'
+    '+w[k].n+" failed so far \u00b7 last "+w[k].last;}'
+)
+
+
 RETRY = (
     'function ofetch(u,n){return fetch(u).then(function(r){'
     'if(!r.ok)throw new Error(r.status);return r;}).catch(function(e){'
@@ -146,6 +157,7 @@ def panel_html(slug, app, server_port=None):
                 '<canvas id="owave-all" style="width:100%;flex:1 1 0;min-height:0"></canvas>'
                 '<div id="owave-zl" style="flex:0 0 auto;color:#6E747C"></div>'
                 '<canvas id="owave-zoom" style="width:100%;flex:1 1 0;min-height:0"></canvas>'
+                '<div id="owave-stat" style="flex:0 0 auto;font-size:10px"></div>'
                 '</div>'
                 '<script>(function(){'
                 'var note=document.getElementById("owave-note"),zl=document.getElementById("owave-zl"),'
@@ -156,7 +168,7 @@ def panel_html(slug, app, server_port=None):
                 'return m?decodeURIComponent(m[1]):fb;}'
                 f'var app="{app}";'
                 'var pid=urlv("project","${project}");'
-                f'{RETRY}'
+                f'{RETRY}{STATUS}'
                 'var zs=Number(urlv("part_start","${part_start}"))||0,'
                 'ze=Number(urlv("part_end","${part_end}"))||0;'
                 'var all=null,dur=0,zoom=null;'
@@ -189,7 +201,7 @@ def panel_html(slug, app, server_port=None):
                 'get(zs,Math.min(ze,dur),900).then(function(j){zoom=j.peaks||[];'
                 'zl.textContent="Selected Part \u00b7 "+zs+"\u2013"+ze+" s at "'
                 '+(j.bin_duration_s||0).toFixed(3)+" s per bin";busy=false;draw();})'
-                '.catch(function(){busy=false;});}'
+                '.catch(function(e){busy=false;ostat("owave-stat",e.message);});}'
                 'draw();}'
                 'function get(a,b,bins){return ofetch(app+"/api/waveform?project_id="+pid'
                 '+"&role=original&start_s="+a+(b?"&end_s="+b:"")+"&bins="+bins,1)'
@@ -202,9 +214,10 @@ def panel_html(slug, app, server_port=None):
                 '.then(function(j){zoom=j.peaks||[];'
                 'zl.textContent="Selected Part \u00b7 "+zs+"\u2013"+ze+" s at "'
                 '+(j.bin_duration_s||0).toFixed(3)+" s per bin";'
-                'draw();window.__owaveTimer=setInterval(tick,250);})'
-                '.catch(function(e){note.textContent="Waveform unavailable ("+e.message'
-                '+"). Orpheus must be running; this is not evidence of silence.";});'
+                'draw();ostat("owave-stat","");window.__owaveTimer=setInterval(tick,250);})'
+                '.catch(function(e){ostat("owave-stat",e.message);'
+                'if(!all){note.textContent="Waveform unavailable. Orpheus must be running; '
+                'this is not evidence of silence.";}});'
                 '})();</script>'
         ),
         "matcher": (
@@ -217,6 +230,7 @@ def panel_html(slug, app, server_port=None):
                 '<span style="color:#9DCFAD">\u25ae accepted</span>'
                 '<span style="color:#4A4F55">\u25ae detected events</span>'
                 '<span id="osure-sub" style="margin-left:auto;color:#6E747C"></span></div>'
+                '<div id="osure-stat" style="flex:0 0 auto;font-size:10px"></div>'
                 '</div>'
                 '<script>(function(){'
                 'var c=document.getElementById("osure-c"),head=document.getElementById("osure-head"),'
@@ -227,7 +241,7 @@ def panel_html(slug, app, server_port=None):
                 'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
                 'return m?decodeURIComponent(m[1]):fb;}'
                 'var pid=urlv("project","${project}");'
-                f'{RETRY}'
+                f'{RETRY}{STATUS}'
                 'var props=[],dens=[],dur=0,lo=1,hi=1;'
                 'function vid(){var d=document;'
                 'try{if(window.parent!==window&&parent.document)d=parent.document;}catch(e){}'
@@ -272,7 +286,7 @@ def panel_html(slug, app, server_port=None):
                 'sub.textContent=props.length+" proposals \u00b7 similarity "'
                 '+lo.toFixed(3)+"\u2013"+hi.toFixed(3)+" \u00b7 "+dens.reduce(function(a,b){return a+b;},0)'
                 '+" detected events";}'
-                'draw();window.__osureTimer=setInterval(draw,250);}'
+                'draw();ostat("osure-stat","");window.__osureTimer=setInterval(draw,250);}'
                 'ofetch(app+"/api/families?project_id="+pid,1).then(function(r){return r.json();})'
                 '.then(function(j){var fs=Array.isArray(j)?j:(j.families||[]);'
                 'fs.forEach(function(f){'
@@ -289,9 +303,10 @@ def panel_html(slug, app, server_port=None):
                 'evs.forEach(function(e){var t=e.anchor_s||e.range_s[0];'
                 'var b=Math.min(B-1,Math.max(0,Math.floor(t/dur*B)));dens[b]++;});'
                 'ready();})'
-                '.catch(function(e){head.textContent="Matcher evidence unavailable";'
+                '.catch(function(e){ostat("osure-stat",e.message);'
+                'if(!props.length){head.textContent="Matcher evidence unavailable";'
                 'head.style.color="#FF8790";'
-                'sub.textContent="Orpheus must be running ("+e.message+"). Not evidence that no proposals exist.";});'
+                'sub.textContent="Orpheus must be running. Not evidence that no proposals exist.";}});'
                 '})();</script>'
         ),
         "now": (
@@ -306,6 +321,7 @@ def panel_html(slug, app, server_port=None):
                 '<span style="color:#FF5A36">\u2502 placed contact</span>'
                 '<span style="color:#8A9099">\u2502 playhead</span>'
                 '<span id="onow-static" style="font-size:10px;color:#6E747C;margin-left:auto"></span></div>'
+                '<div id="onow-stat" style="flex:0 0 auto;font-size:10px"></div>'
                 '</div>'
                 '<script>(function(){'
                 'var c=document.getElementById("onow-c"),head=document.getElementById("onow-head"),'
@@ -316,7 +332,7 @@ def panel_html(slug, app, server_port=None):
                 'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
                 'return m?decodeURIComponent(m[1]):fb;}'
                 'var pid=urlv("project","${project}");'
-                f'{RETRY}'
+                f'{RETRY}{STATUS}'
                 'var WIN=20,bands=[],ticks=[],dur=0,fam="";'
                 'function vid(){var d=document;'
                 'try{if(window.parent!==window&&parent.document)d=parent.document;}catch(e){}'
@@ -362,9 +378,10 @@ def panel_html(slug, app, server_port=None):
                 'var acc=bands.filter(function(b){return b.k==="accepted";}).length;'
                 'st.textContent=bands.length+" ranges known \u00b7 "+acc+" accepted \u00b7 "'
                 '+(bands.length-acc)+" awaiting review \u00b7 window \u00b1"+(WIN/2)+" s";'
-                'draw();window.__onowTimer=setInterval(draw,200);})'
-                '.catch(function(e){head.textContent="Decisions unavailable";head.style.color="#FF8790";'
-                'sub.textContent="Orpheus must be running ("+e.message+"). This is not evidence that no decisions exist.";});'
+                'draw();ostat("onow-stat","");window.__onowTimer=setInterval(draw,200);})'
+                '.catch(function(e){ostat("onow-stat",e.message);'
+                'if(!bands.length){head.textContent="Decisions unavailable";head.style.color="#FF8790";'
+                'sub.textContent="Orpheus must be running. This is not evidence that no decisions exist.";}});'
                 '})();</script>'
         ),
     }
