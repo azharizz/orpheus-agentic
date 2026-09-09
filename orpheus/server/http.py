@@ -10,6 +10,15 @@ from .. import config
 from . import auth
 
 
+def embedders():
+    """Grafana Cloud iframes the panel pages, so name its origin as a frame parent."""
+    from ..ops import observability as obs
+
+    url = ((obs.config() or {}).get("dashboard_url") or "").strip()
+    match = re.match(r"(https://[^/]+)", url)
+    return match.group(1) if match else "'none'"
+
+
 class RequestError(ValueError):
     def __init__(self, message, status=400):
         super().__init__(message)
@@ -25,9 +34,14 @@ class LocalHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Cache-Control", "no-store")
+        embed = self.path.startswith("/embed/")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+            "default-src 'self'; script-src 'self'%s; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors %s"
+            % (
+                " 'unsafe-inline'" if embed else "",
+                embedders() if embed else "'none'",
+            ),
         )
         super().end_headers()
 
