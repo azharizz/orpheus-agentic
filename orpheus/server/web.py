@@ -360,10 +360,27 @@ class Handler(LocalHandler):
             self.send_json(movie.status(pid))
         elif route == "/api/waveform":
             self.audio_data(route, parse_qs(parsed.query))
+        elif route.startswith("/embed/"):
+            self.embed_panel(route.removeprefix("/embed/"))
         elif route.startswith("/projects/"):
             self.project_file(route.removeprefix("/projects/"))
         else:
             raise RequestError("Route not found.", 404)
+
+    def embed_panel(self, slug):
+        """Serve one dashboard panel standalone so Grafana Cloud can iframe it."""
+        from ..ops.grafana import PANEL_SLUGS, panel_html
+
+        if slug not in PANEL_SLUGS:
+            raise RequestError("Panel not found.", 404)
+        origin = config.PUBLIC_ORIGIN or f"http://127.0.0.1:{config.SERVER_PORT}"
+        body = (
+            "<!doctype html><meta charset=utf-8>"
+            "<style>html,body{margin:0;height:100%;background:#111217;"
+            "color:#C7CBD1;font:400 12px/1.4 system-ui}</style>"
+            + panel_html(slug, origin, config.SERVER_PORT)
+        )
+        self.send_bytes(body.encode(), "text/html; charset=utf-8")
 
     def project_file(self, relative):
         allowed = re.fullmatch(
