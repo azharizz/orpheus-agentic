@@ -250,7 +250,23 @@ def dashboard():
             f'src="{app}/projects/${{project}}/video.mp4#t=${{part_start}}"></video>'
         )},
     )
-    add(
+    if hosted:
+        # Only logs reach Grafana Cloud, so count the recorded runs instead of a gauge.
+        add(
+            "Last recorded run", "stat", {"x": 14, "y": 3, "w": 10, "h": 4},
+            [target(
+                'sum(count_over_time(' + base + ' | event="candidate" [$__range]))',
+                datasource=loki, instant=True, legend="Recorded renders",
+            )],
+            description="How many renders this film has recorded in the selected range. A recorded render is not an approval.",
+            options={**stat_options, "colorMode": "background", "textMode": "value_and_name"},
+            field={"color": {"mode": "thresholds"}, "decimals": 0, "noValue": "NO RUN",
+                   "thresholds": {"mode": "absolute", "steps": [
+                       {"color": amber, "value": None}, {"color": green, "value": 1}]}},
+            datasource=loki,
+        )
+    else:
+        add(
         "Last recorded run", "stat", {"x": 14, "y": 3, "w": 10, "h": 4},
         [
             target("orpheus_candidate_clipped_samples" + project, "A", instant=True, legend="Clipped samples"),
@@ -300,20 +316,19 @@ def dashboard():
     if hosted:
         add(
             "Soundwave of the film", "barchart", {"x": 0, "y": 14, "w": 14, "h": 8},
-            [target(base + ' | event="movie_signal"', datasource=loki)],
+            [target(base + ' | event="sound_envelope"', datasource=loki)],
             description="Measured level across the film. Amplitude is signal only: a tall peak is not a footstep and a flat stretch is not proven silence.",
             options={"barRadius": 0, "barWidth": .9, "fullHighlight": False, "groupWidth": .9,
                      "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
                      "orientation": "vertical", "showValue": "never", "stacking": "none",
-                     "tooltip": {"mode": "multi", "sort": "desc"}, "xField": "time_s"},
+                     "tooltip": {"mode": "multi", "sort": "desc"}, "xField": "media_s"},
             transformations=[
                 {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
-                {"id": "filterFieldsByName", "options": {"include": {"names": ["time_s", "rms_dbfs", "peak_dbfs"]}}},
+                {"id": "filterFieldsByName", "options": {"include": {"names": ["media_s", "rms_dbfs"]}}},
                 {"id": "convertFieldType", "options": {"conversions": [
-                    {"targetField": "time_s", "destinationType": "numeric"},
-                    {"targetField": "rms_dbfs", "destinationType": "numeric"},
-                    {"targetField": "peak_dbfs", "destinationType": "numeric"}]}},
-                {"id": "sortBy", "options": {"fields": [{"field": "time_s", "desc": False}]}},
+                    {"targetField": "media_s", "destinationType": "numeric"},
+                    {"targetField": "rms_dbfs", "destinationType": "numeric"}]}},
+                {"id": "sortBy", "options": {"fields": [{"field": "media_s", "desc": False}]}},
             ],
             field={"unit": "dB", "min": -80, "max": 0, "noValue": "No measured waveform yet"},
             datasource=loki,
@@ -391,20 +406,20 @@ def dashboard():
         add(
             "How sure is the matcher, moment by moment", "barchart", {"x": 0, "y": 22, "w": 24, "h": 9},
             [target(base + ' | event="family_range"', datasource=loki)],
-            description="Similarity of each proposed match. Height is the matcher's own score, not proof the moment belongs to this family.",
+            description="Where the matcher proposed each occurrence, by status. Placement is a proposal, not proof the moment belongs to this family.",
             options={"barRadius": 0, "barWidth": .9, "fullHighlight": False, "groupWidth": .9,
                      "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
                      "orientation": "vertical", "showValue": "never", "stacking": "none",
                      "tooltip": {"mode": "single", "sort": "none"}, "xField": "start_s"},
             transformations=[
                 {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
-                {"id": "filterFieldsByName", "options": {"include": {"names": ["start_s", "similarity_score"]}}},
+                {"id": "filterFieldsByName", "options": {"include": {"names": ["start_s", "end_s"]}}},
                 {"id": "convertFieldType", "options": {"conversions": [
                     {"targetField": "start_s", "destinationType": "numeric"},
-                    {"targetField": "similarity_score", "destinationType": "numeric"}]}},
+                    {"targetField": "end_s", "destinationType": "numeric"}]}},
                 {"id": "sortBy", "options": {"fields": [{"field": "start_s", "desc": False}]}},
             ],
-            field={"min": 0, "max": 1, "decimals": 3, "noValue": "No ranked matches yet"},
+            field={"unit": "s", "decimals": 2, "noValue": "No ranked matches yet"},
             datasource=loki,
         )
     else:
@@ -504,7 +519,7 @@ def dashboard():
             options=table_options,
             transformations=[
                 {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
-                {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "status", "decision", "verdict", "start_s", "end_s"]}}},
+                {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "status", "family_id", "start_s", "end_s"]}}},
                 {"id": "sortBy", "options": {"fields": [{"field": "Time", "desc": True}]}},
             ],
             field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "noValue": "No activity yet"},
