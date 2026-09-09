@@ -566,6 +566,8 @@ async def run_turn(pid, family_id, feedback):
         turn["status"] = "failed"
         turn["error_type"] = type(exc).__name__
         turn["failure"] = failure_info(exc, phase, provider_failed)
+        # The receipt stays redacted; the operator log needs the real cause.
+        traceback.print_exc()
         log("failed", **turn["failure"])
     finally:
         for resource in (runner, service):

@@ -144,3 +144,32 @@ def cancel(operation):
         return response.status_code < 400
     except Exception:
         return False
+
+
+def active():
+    """True when a hosted worker execution is still submitted or running."""
+    if not config.JOB_NAME or not config.GOOGLE_CLOUD_PROJECT:
+        return False
+    try:
+        import google.auth
+        from google.auth.transport.requests import AuthorizedSession
+
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        url = (
+            "https://run.googleapis.com/v2/projects/"
+            + quote(config.GOOGLE_CLOUD_PROJECT, safe="")
+            + "/locations/"
+            + quote(config.GOOGLE_CLOUD_LOCATION, safe="")
+            + "/jobs/"
+            + quote(config.JOB_NAME, safe="")
+            + "/executions?pageSize=3"
+        )
+        response = AuthorizedSession(credentials).get(url, timeout=10)
+        if response.status_code >= 400:
+            return False
+        for row in response.json().get("executions", []):
+            if not row.get("completionTime"):
+                return True
+    except Exception:
+        return False
+    return False

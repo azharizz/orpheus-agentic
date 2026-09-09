@@ -63,6 +63,9 @@ def busy():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return True
+    if config.RUNTIME_MODE == "cloud_run" and jobs.active():
+        # Hosted turns run in a separate Cloud Run Job; local handles cannot see them.
+        return True
     return (PROCESS is not None and PROCESS.poll() is None) or (
         INDEX_THREAD is not None and INDEX_THREAD.is_alive()
     ) or (PREP_THREAD is not None and PREP_THREAD.is_alive())
