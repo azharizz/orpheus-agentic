@@ -521,6 +521,12 @@ class Handler(LocalHandler):
                     )
             else:
                 project = projects.intake(path, context=value("context"), style=value("style"), video_name=filename)
+                if config.RUNTIME_MODE == "cloud_run":
+                    # The worker and the hosted list must agree on who owns this project.
+                    project["owner_id"] = self.owner_id
+                    projects.atomic(
+                        projects.project_dir(project["id"]) / "project.json", project
+                    )
                 # Hosted requests must return well inside the 60s edge timeout.
                 if config.RUNTIME_MODE == "cloud_run" or project["seconds"] >= 300:
                     start_prepare(project["id"], self.owner_id)
