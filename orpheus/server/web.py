@@ -374,11 +374,20 @@ class Handler(LocalHandler):
         if slug not in PANEL_SLUGS:
             raise RequestError("Panel not found.", 404)
         origin = config.PUBLIC_ORIGIN or f"http://127.0.0.1:{config.SERVER_PORT}"
+        markup = panel_html(slug, origin, config.SERVER_PORT)
+        # Grafana interpolates ${var} in panel content but not inside a framed
+        # document, so resolve the placeholders from the iframe query instead.
+        query = parse_qs(urlparse(self.path).query)
+        for name in ("project", "part_start", "part_end"):
+            value = query.get(name, [""])[0]
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{0,64}", value):
+                raise RequestError("Panel parameter is not valid.", 400)
+            markup = markup.replace("${" + name + "}", value)
         body = (
             "<!doctype html><meta charset=utf-8>"
             "<style>html,body{margin:0;height:100%;background:#111217;"
             "color:#C7CBD1;font:400 12px/1.4 system-ui}</style>"
-            + panel_html(slug, origin, config.SERVER_PORT)
+            + markup
         )
         self.send_bytes(body.encode(), "text/html; charset=utf-8")
 
