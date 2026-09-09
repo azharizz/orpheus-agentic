@@ -1,6 +1,7 @@
 """Submit explicit turns through Agent Engine or the lean Cloud Run path."""
 
 import re
+import time
 from urllib.parse import quote
 
 from .. import config
@@ -107,9 +108,14 @@ def _dispatch_cloud_run(project_id, feedback, run_key=None, family_id=None):
     return {"status": "submitted", "operation": result.get("name") if isinstance(result, dict) else None}
 
 
+_DISPATCHED_AT = [0.0]
+
+
 def dispatch(project_id, feedback, run_key=None, family_id=None):
     """Submit one bounded worker turn to the selected hosted runtime."""
     payload(project_id, feedback, run_key, family_id)
+    # Cloud Run needs a moment to publish the execution; hold busy() until it does.
+    _DISPATCHED_AT[0] = time.time()
     if config.RUNTIME_MODE != "cloud_run":
         raise RuntimeError("Hosted dispatch is only available in cloud_run mode")
     if not config.GOOGLE_CLOUD_PROJECT:
@@ -148,6 +154,8 @@ def cancel(operation):
 
 def active():
     """True when a hosted worker execution is still submitted or running."""
+    if time.time() - _DISPATCHED_AT[0] < 90:
+        return True
     if not config.JOB_NAME or not config.GOOGLE_CLOUD_PROJECT:
         return False
     try:

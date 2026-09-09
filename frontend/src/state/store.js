@@ -110,7 +110,8 @@ export async function action(work, message, operation = null) {
   } finally {
     update({
       busy: false,
-      operation: operation?.kind === "agent" && state.running ? operation : null,
+      // A hosted job needs a moment to appear; keep the indicator until a poll clears it.
+      operation: operation?.kind === "agent" ? operation : null,
     });
     schedule();
   }
