@@ -340,7 +340,8 @@ class Handler(LocalHandler):
         allowed = re.fullmatch(
             r"([a-f0-9]{16})/(video\.mp4|poster\.jpg|original\.wav|events\.jsonl|"
             r"[a-f0-9]{12}\.(?:mp4|wav|json)|[a-f0-9]{12}-master\.(?:mp4|mkv)|"
-            r"[a-f0-9]{12}-turn\.json|takes/[a-f0-9]{12}\.wav)",
+            r"[a-f0-9]{12}-turn\.json|takes/[a-f0-9]{12}\.wav|"
+            r"previews/[a-f0-9]{12}(?:-original|-mix)?\.(?:mp4|wav))",
             relative,
         )
         if not allowed:

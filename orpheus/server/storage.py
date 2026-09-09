@@ -8,7 +8,7 @@ from .. import config
 
 UPLOAD_FIELDS = {"video", "sfx", "audio"}
 DOWNLOAD_RE = re.compile(
-    r"(?:video\.mp4|poster\.jpg|original\.wav|sfx\.wav|events\.jsonl|[a-f0-9]{12}\.(?:mp4|wav|json)|[a-f0-9]{12}-turn\.json|takes/[a-f0-9]{12}\.wav)"
+    r"(?:video\.mp4|poster\.jpg|original\.wav|sfx\.wav|events\.jsonl|[a-f0-9]{12}\.(?:mp4|wav|json)|[a-f0-9]{12}-turn\.json|takes/[a-f0-9]{12}\.wav|previews/[a-f0-9]{12}(?:-original|-mix)?\.(?:mp4|wav))"
 )
 
 
