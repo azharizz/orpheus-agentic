@@ -333,7 +333,7 @@ class Handler(LocalHandler):
             pid = parse_qs(parsed.query).get("project_id", [None])[0]
             self.send_json(obs.status() | {"gates": obs.gates(pid)})
         elif route == "/api/takes":
-            pid = parse_qs(parsed.query)["project_id"][0]
+            pid = self.project_of(parse_qs(parsed.query))
             projects.load(pid)
             self.send_json(
                 {
@@ -347,7 +347,7 @@ class Handler(LocalHandler):
                 }
             )
         elif route == "/api/families":
-            pid = parse_qs(parsed.query)["project_id"][0]
+            pid = self.project_of(parse_qs(parsed.query))
             projects.load(pid)
             self.send_json(
                 {
@@ -356,7 +356,7 @@ class Handler(LocalHandler):
                 }
             )
         elif route == "/api/movie":
-            pid = parse_qs(parsed.query)["project_id"][0]
+            pid = self.project_of(parse_qs(parsed.query))
             self.send_json(movie.status(pid))
         elif route == "/api/waveform":
             self.audio_data(route, parse_qs(parsed.query))
@@ -469,7 +469,32 @@ class Handler(LocalHandler):
                         )
         return panels.now_svg(bands, part_start, part_end, 0)
 
+    def project_of(self, query):
+        """Grafana cannot always interpolate its variable, so resolve the newest project."""
+        given = (query.get("project_id") or [""])[0]
+        if re.fullmatch(r"[a-f0-9]{16}", given):
+            return given
+        rows = project_list(self.owner_id)["projects"]
+        if not rows:
+            raise RequestError("No project has been prepared yet.", 404)
+        return rows[0]["id"]
+
     def project_file(self, relative):
+        # Grafana may hand back its uninterpolated variable; serve the newest project.
+        relative = re.sub(
+            r"^(?:\$\{project\}|latest)/",
+            lambda _: self.project_of({}) + "/",
+            relative,
+        )
+        if relative.endswith("/latest-master.mp4"):
+            pid = relative.split("/", 1)[0]
+            newest = ""
+            for family in families.list_families(pid):
+                if family.get("latest_render_id"):
+                    newest = family["latest_render_id"]
+            if not newest:
+                raise RequestError("This project has no render yet.", 404)
+            relative = pid + "/" + newest + "-master.mp4"
         allowed = re.fullmatch(
             r"([a-f0-9]{16})/(video\.mp4|poster\.jpg|original\.wav|events\.jsonl|"
             r"[a-f0-9]{12}\.(?:mp4|wav|json)|[a-f0-9]{12}-master\.(?:mp4|mkv)|"
@@ -501,12 +526,19 @@ class Handler(LocalHandler):
         self.send_file(projects.PROJECTS, relative)
 
     def audio_data(self, route, query):
-        case = projects.load(query["project_id"][0])
+        case = projects.load(self.project_of(query))
         role = query["role"][0]
         if role not in ("original", "candidate"):
             raise ValueError("Invalid waveform role")
         if role == "candidate":
             cid = query["candidate_id"][0]
+            if not re.fullmatch(r"[a-f0-9]{12}", cid):
+                cid = ""
+                for family in families.list_families(case["id"]):
+                    if family.get("latest_render_id"):
+                        cid = family["latest_render_id"]
+                if not cid:
+                    raise RequestError("This project has no render yet.", 404)
             candidate = review.candidate(case, cid, allow_audition=True)
             path = projects.project_dir(case["id"]) / (cid + ".wav")
         else:
