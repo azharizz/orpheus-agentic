@@ -127,6 +127,15 @@ def setup():
     )
 
 
+RETRY = (
+    'function ofetch(u,n){return fetch(u).then(function(r){'
+    'if(!r.ok)throw new Error(r.status);return r;}).catch(function(e){'
+    'if(!(n>0))throw e;'
+    'return new Promise(function(go){setTimeout(go,700);})'
+    '.then(function(){return ofetch(u,n-1);});});}'
+)
+
+
 def panel_html(slug, app, server_port=None):
     """One source for the dashboard panel and its standalone embed page."""
     parts = {
@@ -147,6 +156,7 @@ def panel_html(slug, app, server_port=None):
                 'return m?decodeURIComponent(m[1]):fb;}'
                 f'var app="{app}";'
                 'var pid=urlv("project","${project}");'
+                f'{RETRY}'
                 'var zs=Number(urlv("part_start","${part_start}"))||0,'
                 'ze=Number(urlv("part_end","${part_end}"))||0;'
                 'var all=null,dur=0,zoom=null;'
@@ -181,9 +191,9 @@ def panel_html(slug, app, server_port=None):
                 '+(j.bin_duration_s||0).toFixed(3)+" s per bin";busy=false;draw();})'
                 '.catch(function(){busy=false;});}'
                 'draw();}'
-                'function get(a,b,bins){return fetch(app+"/api/waveform?project_id="+pid'
-                '+"&role=original&start_s="+a+(b?"&end_s="+b:"")+"&bins="+bins)'
-                '.then(function(r){if(!r.ok)throw new Error(r.status);return r.json();});}'
+                'function get(a,b,bins){return ofetch(app+"/api/waveform?project_id="+pid'
+                '+"&role=original&start_s="+a+(b?"&end_s="+b:"")+"&bins="+bins,1)'
+                '.then(function(r){return r.json();});}'
                 'get(0,0,900).then(function(j){all=j.peaks||[];dur=j.duration_s||j.end_s||0;'
                 'if(!(ze>zs)){zs=Math.max(0,Math.min(zs,dur-1));ze=Math.min(dur,zs+60);}'
                 'note.textContent="Whole film \u00b7 "+Math.round(dur)+" s at "'
@@ -217,6 +227,7 @@ def panel_html(slug, app, server_port=None):
                 'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
                 'return m?decodeURIComponent(m[1]):fb;}'
                 'var pid=urlv("project","${project}");'
+                f'{RETRY}'
                 'var props=[],dens=[],dur=0,lo=1,hi=1;'
                 'function vid(){var d=document;'
                 'try{if(window.parent!==window&&parent.document)d=parent.document;}catch(e){}'
@@ -262,14 +273,14 @@ def panel_html(slug, app, server_port=None):
                 '+lo.toFixed(3)+"\u2013"+hi.toFixed(3)+" \u00b7 "+dens.reduce(function(a,b){return a+b;},0)'
                 '+" detected events";}'
                 'draw();window.__osureTimer=setInterval(draw,250);}'
-                'fetch(app+"/api/families?project_id="+pid).then(function(r){return r.json();})'
+                'ofetch(app+"/api/families?project_id="+pid,1).then(function(r){return r.json();})'
                 '.then(function(j){var fs=Array.isArray(j)?j:(j.families||[]);'
                 'fs.forEach(function(f){'
                 '(f.accepted_ranges||[]).forEach(function(m){if(m.range_s&&m.similarity_score!=null)'
                 'props.push({t:m.refined_anchor_s||m.range_s[0],s:m.similarity_score,k:"accepted"});});'
                 '(f.pending_matches||[]).forEach(function(m){if(m.range_s&&m.similarity_score!=null)'
                 'props.push({t:m.refined_anchor_s||m.range_s[0],s:m.similarity_score,k:"pending"});});});'
-                'return fetch(app+"/api/movie?project_id="+pid);})'
+                'return ofetch(app+"/api/movie?project_id="+pid,1);})'
                 '.then(function(r){return r.json();})'
                 '.then(function(j){dur=j.waveform&&j.waveform.length?'
                 'j.waveform[j.waveform.length-1].time_s:0;'
@@ -305,6 +316,7 @@ def panel_html(slug, app, server_port=None):
                 'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
                 'return m?decodeURIComponent(m[1]):fb;}'
                 'var pid=urlv("project","${project}");'
+                f'{RETRY}'
                 'var WIN=20,bands=[],ticks=[],dur=0,fam="";'
                 'function vid(){var d=document;'
                 'try{if(window.parent!==window&&parent.document)d=parent.document;}catch(e){}'
@@ -341,7 +353,7 @@ def panel_html(slug, app, server_port=None):
                 'else{head.textContent=mm+":"+ss+" \u2014 no decision covers this moment";'
                 'head.style.color="#8A9099";sub.textContent="Unexamined picture, not proven silent.";}'
                 '}'
-                'fetch(app+"/api/families?project_id="+pid).then(function(r){return r.json();})'
+                'ofetch(app+"/api/families?project_id="+pid,1).then(function(r){return r.json();})'
                 '.then(function(j){var fs=Array.isArray(j)?j:(j.families||[]);'
                 'fs.forEach(function(f){if(!fam)fam=f.name||f.id||"";'
                 '(f.accepted_ranges||[]).forEach(function(m){if(m.range_s)bands.push({s:m.range_s[0],e:m.range_s[1],k:"accepted"});'
@@ -479,16 +491,28 @@ def dashboard():
         "showHeader": True,
     }
 
+    def ranges(status, ref, label):
+        if not hosted:
+            return target(
+                'sum(orpheus_family_ranges' + project[:-1] + ',status="%s"})' % status,
+                ref, instant=True, legend=label,
+            )
+        # Only logs reach Grafana Cloud, so count the recorded ranges instead.
+        return target(
+            'sum(count_over_time(' + base + ' | event="family_range" | status="%s" [$__range]))' % status,
+            ref, datasource=loki, instant=True, legend=label,
+        )
+
     add(
         "Is this film's sound finished?", "stat", {"x": 0, "y": 0, "w": 24, "h": 3},
         [
-            target('sum(orpheus_family_ranges' + project[:-1] + ',status="pending"})', "A", instant=True, legend="Awaiting your review"),
-            target('sum(orpheus_family_ranges' + project[:-1] + ',status="accepted"})', "B", instant=True, legend="Accepted"),
-            target('sum(orpheus_family_ranges' + project[:-1] + ',status="rejected"})', "C", instant=True, legend="Rejected"),
+            ranges("pending", "A", "Awaiting your review"),
+            ranges("accepted", "B", "Accepted"),
+            ranges("rejected", "C", "Rejected"),
         ],
         description="The one question this dashboard answers. Pending are ranked proposals, never decisions. Zero pending does not mean the sound is right; only you can judge that by listening.",
         options={**stat_options, "colorMode": "background", "textMode": "value_and_name"},
-        field={"color": {"mode": "thresholds"}, "decimals": 0, "noValue": "0",
+        field={"color": {"mode": "thresholds"}, "decimals": 0, "noValue": "NO DATA",
                "thresholds": {"mode": "absolute", "steps": [{"color": green, "value": None}]}},
         overrides=[
             {"matcher": {"id": "byName", "options": "Awaiting your review"},
@@ -497,6 +521,7 @@ def dashboard():
             {"matcher": {"id": "byName", "options": "Rejected"},
              "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#3A3F45"}}]},
         ],
+        datasource=loki if hosted else prom,
     )
     add(
         "The film", "text", {"x": 0, "y": 3, "w": 14, "h": 11}, [],
@@ -518,6 +543,7 @@ def dashboard():
             description="How many renders this film has recorded in the selected range. A recorded render is not an approval.",
             options={**stat_options, "colorMode": "background", "textMode": "value_and_name"},
             field={"color": {"mode": "thresholds"}, "decimals": 0, "noValue": "NO RUN",
+                   "displayName": "Recorded renders",
                    "thresholds": {"mode": "absolute", "steps": [
                        {"color": amber, "value": None}, {"color": green, "value": 1}]}},
             datasource=loki,
