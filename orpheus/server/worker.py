@@ -73,6 +73,11 @@ def progress_for_event(event, fields, turn):
     }
 
 
+def invocation_id():
+    """Agent Engine rejects appended events without one; the local store does not."""
+    return "orpheus-" + uuid.uuid4().hex[:16]
+
+
 def failure_info(exc, phase, provider_exhausted=False):
     """Safe categories only: exception text may contain credentials/media payloads."""
     if isinstance(exc, LlmCallsLimitExceededError):
@@ -146,6 +151,7 @@ async def repair_interrupted_tools(service, session):
             session,
             Event(
                 author="OrpheusEditor",
+                invocation_id=invocation_id(),
                 content=types.Content(
                     role="user",
                     parts=[
@@ -391,6 +397,7 @@ async def run_turn(pid, family_id, feedback):
             session,
             Event(
                 author="OrpheusEditor",
+                invocation_id=invocation_id(),
                 actions=EventActions(
                     state_delta={
                         "human_reviews": human_reviews,
@@ -414,6 +421,7 @@ async def run_turn(pid, family_id, feedback):
             session,
             Event(
                 author="OrpheusEditor",
+                invocation_id=invocation_id(),
                 actions=EventActions(
                     state_delta={
                         "cycle": 0,
@@ -455,6 +463,7 @@ async def run_turn(pid, family_id, feedback):
                 session,
                 Event(
                     author="OrpheusEditor",
+                invocation_id=invocation_id(),
                     actions=EventActions(state_delta={"grafana_startup": history}),
                 ),
             )
