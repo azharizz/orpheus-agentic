@@ -58,11 +58,13 @@ def start_observability():
 
 def busy():
     projects.ROOT.mkdir(parents=True, exist_ok=True)
-    with (projects.ROOT / "worker.lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return True
+    if config.RUNTIME_MODE != "cloud_run":
+        # A flock on a shared object mount is never released when a container dies.
+        with (projects.ROOT / "worker.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
     if config.RUNTIME_MODE == "cloud_run" and jobs.active():
         # Hosted turns run in a separate Cloud Run Job; local handles cannot see them.
         return True
@@ -151,6 +153,10 @@ def mutation():
     with LOCK:
         if busy():
             raise BlockingIOError()
+        if config.RUNTIME_MODE == "cloud_run":
+            # The in-process LOCK is the guard here; a mount flock cannot be released.
+            yield
+            return
         with (projects.ROOT / "worker.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             yield
