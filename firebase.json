@@ -23,6 +23,13 @@
         }
       },
       {
+        "source": "/embed/**",
+        "run": {
+          "serviceId": "orpheus-api",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/workspace",
         "destination": "/index.html"
       },
