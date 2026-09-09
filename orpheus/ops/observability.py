@@ -856,6 +856,23 @@ def metrics_text():
     return "\n".join(lines) + "\n"
 
 
+def mcp_bearer(cfg):
+    """Cloud Run guards the MCP service with IAM, so present an identity token there."""
+    url = cfg.get("mcp_url", "")
+    if ".run.app" not in url:
+        return cfg["mcp_token"]
+    try:
+        import google.auth.transport.requests
+        import google.oauth2.id_token
+
+        audience = url.split("/mcp")[0]
+        return google.oauth2.id_token.fetch_id_token(
+            google.auth.transport.requests.Request(), audience
+        )
+    except Exception:
+        return cfg["mcp_token"]
+
+
 async def investigate(project_id, topic="history", candidate_id="", part=None):
     """All evidence reads go through the official Grafana MCP server, not direct Loki APIs."""
     cfg = config()
@@ -910,7 +927,7 @@ async def investigate(project_id, topic="history", candidate_id="", part=None):
     try:
         async with asyncio.timeout(45):
             async with streamablehttp_client(
-                cfg["mcp_url"], headers={"Authorization": "Bearer " + cfg["mcp_token"]}
+                cfg["mcp_url"], headers={"Authorization": "Bearer " + mcp_bearer(cfg)}
             ) as (read, write, _):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
