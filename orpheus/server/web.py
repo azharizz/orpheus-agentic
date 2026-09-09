@@ -368,34 +368,106 @@ class Handler(LocalHandler):
             raise RequestError("Route not found.", 404)
 
     def embed_panel(self, slug):
-        """Serve one dashboard panel standalone so Grafana Cloud can iframe it."""
-        from ..ops.grafana import PANEL_SLUGS, panel_html
+        """Draw one dashboard panel as markup, since Grafana frames cannot script."""
+        from ..ops.grafana import PANEL_SLUGS
 
         if slug not in PANEL_SLUGS:
             raise RequestError("Panel not found.", 404)
-        origin = config.PUBLIC_ORIGIN or f"http://127.0.0.1:{config.SERVER_PORT}"
-        markup = panel_html(slug, origin, config.SERVER_PORT)
-        # Grafana interpolates ${var} in panel content but not inside a framed
-        # document, so resolve the placeholders from the iframe query instead.
         query = parse_qs(urlparse(self.path).query)
         project = query.get("project", [""])[0]
         if not re.fullmatch(r"[a-f0-9]{16}", project):
             # The dashboard ships a '.*' wildcard, so show the newest project.
             rows = project_list(self.owner_id)["projects"]
-            project = rows[0]["id"] if rows else ""
-        values = {"project": project}
+            if not rows:
+                return self.send_panel("No project has been prepared yet.")
+            project = rows[0]["id"]
+        bounds = []
         for name in ("part_start", "part_end"):
             raw = query.get(name, [""])[0]
-            values[name] = raw if re.fullmatch(r"\d{0,7}(\.\d{0,3})?", raw) else "0"
-        for name, value in values.items():
-            markup = markup.replace("${" + name + "}", value)
+            bounds.append(float(raw) if re.fullmatch(r"\d{1,7}(\.\d{1,3})?", raw) else 0.0)
+        try:
+            self.send_panel(self.panel_markup(slug, project, *bounds))
+        except (ValueError, KeyError, OSError) as exc:
+            self.send_panel(
+                f"{slug} unavailable ({exc}). This is not evidence of silence."
+            )
+
+    def send_panel(self, markup):
         body = (
             "<!doctype html><meta charset=utf-8>"
-            "<style>html,body{margin:0;height:100%;background:#111217;"
-            "color:#C7CBD1;font:400 12px/1.4 system-ui}</style>"
+            "<style>html,body{margin:0;height:100%;background:#101215;"
+            "color:#C7CBD1;font:400 12px/1.4 system-ui;overflow:hidden}</style>"
             + markup
         )
         self.send_bytes(body.encode(), "text/html; charset=utf-8")
+
+    def panel_markup(self, slug, project, part_start, part_end):
+        from ..domain import media, movie
+        from ..ops import panels
+
+        case = projects.load(project)
+        if slug == "soundwave":
+            whole = media.waveform(case["original_path"], 900, 0)
+            duration = whole.get("duration_s") or whole.get("end_s") or 0
+            if not part_end > part_start:
+                part_start, part_end = 0.0, min(duration, 60.0)
+            part = media.waveform(
+                case["original_path"], 900, part_start, min(part_end, duration)
+            )
+            return panels.soundwave_svg(
+                whole.get("peaks", []),
+                duration,
+                part_start,
+                part_end,
+                part.get("peaks", []),
+                part.get("bin_duration_s", 0),
+            )
+        rows = families.list_families(project)
+        if slug == "matcher":
+            state = movie.status(project)
+            wave = state.get("waveform") or []
+            duration = wave[-1]["time_s"] if wave else 0
+            events = state.get("events") or []
+            if not duration and events:
+                duration = events[-1]["range_s"][1]
+            proposals = []
+            for family in rows:
+                for key, kind in (
+                    ("accepted_ranges", "accepted"),
+                    ("pending_matches", "pending"),
+                ):
+                    for match in family.get(key) or []:
+                        if match.get("range_s") and match.get("similarity_score") is not None:
+                            proposals.append(
+                                {
+                                    "t": match.get("refined_anchor_s")
+                                    or match["range_s"][0],
+                                    "s": match["similarity_score"],
+                                    "k": kind,
+                                }
+                            )
+            buckets = [0] * 120
+            for event in events:
+                if duration > 0:
+                    slot = min(119, int(event["range_s"][0] / duration * 120))
+                    buckets[slot] += 1
+            return panels.matcher_svg(proposals, buckets, duration)
+        bands = []
+        for family in rows:
+            for key, kind in (
+                ("accepted_ranges", "accepted"),
+                ("pending_matches", "pending"),
+            ):
+                for match in family.get(key) or []:
+                    if match.get("range_s"):
+                        bands.append(
+                            {
+                                "s": match["range_s"][0],
+                                "e": match["range_s"][1],
+                                "k": kind,
+                            }
+                        )
+        return panels.now_svg(bands, part_start, part_end, 0)
 
     def project_file(self, relative):
         allowed = re.fullmatch(
