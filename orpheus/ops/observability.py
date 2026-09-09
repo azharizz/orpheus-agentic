@@ -600,10 +600,31 @@ def flush(limit=500):
                 (limit,),
             ).fetchall()
         with httpx.Client(timeout=8, trust_env=False) as client:
-            for backend, flag, column in [
-                ("loki_url", 3, "logs_sent"),
-                ("tempo_url", 4, "trace_sent"),
-            ]:
+            destinations = [
+                (
+                    "loki_url",
+                    3,
+                    "logs_sent",
+                    "/loki/api/v1/push",
+                    httpx.BasicAuth(cfg.get("loki_user", ""), cfg["telemetry_token"])
+                    if cfg.get("telemetry_token")
+                    else None,
+                ),
+                (
+                    "otlp_url",
+                    4,
+                    "trace_sent",
+                    "/otlp/v1/traces",
+                    httpx.BasicAuth(cfg.get("otlp_user", ""), cfg["telemetry_token"])
+                    if cfg.get("telemetry_token")
+                    else None,
+                ),
+            ]
+            if cfg.get("tempo_url") and not cfg.get("otlp_url"):
+                destinations.append(("tempo_url", 4, "trace_sent", "/v1/traces", None))
+            for backend, flag, column, endpoint, auth in destinations:
+                if not cfg.get(backend):
+                    continue
                 batch = [r for r in rows if not r[flag]]
                 if not batch:
                     continue
@@ -626,7 +647,6 @@ def flush(limit=500):
                                 for k, v in streams.items()
                             ]
                         }
-                        endpoint = "/loki/api/v1/push"
                     else:
                         body = {
                             "resourceSpans": [
@@ -635,8 +655,7 @@ def flush(limit=500):
                                 for s in json.loads(r[2])["resourceSpans"]
                             ]
                         }
-                        endpoint = "/v1/traces"
-                    client.post(cfg[backend] + endpoint, json=body).raise_for_status()
+                    client.post(cfg[backend] + endpoint, json=body, auth=auth).raise_for_status()
                     with connect() as db:
                         db.executemany(
                             "UPDATE events SET " + column + "=1 WHERE id=?",
@@ -853,7 +872,11 @@ async def investigate(project_id, topic="history", candidate_id="", part=None):
         raise ValueError("Invalid candidate")
     if topic == "part" and not part:
         raise ValueError("Part topic requires a selected Part")
-    await asyncio.to_thread(flush)
+    try:
+        # Evidence export must never abort the turn it is describing.
+        await asyncio.to_thread(flush)
+    except Exception:
+        pass
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
