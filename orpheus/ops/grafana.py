@@ -173,11 +173,13 @@ def panel_html(slug, app, server_port=None):
                 f'{RETRY}{STATUS}'
                 'var zs=Number(urlv("part_start","${part_start}"))||0,'
                 'ze=Number(urlv("part_end","${part_end}"))||0;'
-                'var all=null,dur=0,zoom=null;'
+                'var all=null,dur=0,zoom=null,cand=null;'
+                'var cid=urlv("candidate","${candidate}");'
+                'if(!/^[a-f0-9]{12}$/.test(cid))cid="";'
                 'function vid(){var d=document;'
                 'try{if(window.parent!==window&&parent.document)d=parent.document;}catch(e){}'
                 'var v=d.querySelectorAll("video");return v.length?v[0]:null;}'
-                'function paint(c,peaks,t0,t1,shade){'
+                'function paint(c,peaks,t0,t1,shade,over){'
                 'var r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;'
                 'c.width=r.width*d;c.height=r.height*d;'
                 'var x=c.getContext("2d");x.setTransform(d,0,0,d,0,0);x.clearRect(0,0,r.width,r.height);'
@@ -190,24 +192,34 @@ def panel_html(slug, app, server_port=None):
                 'x.fillStyle="#FF5A36";'
                 'for(var i=0;i<n;i++){var h=Math.max(0.5,Math.min(1,peaks[i])*mid*0.95);'
                 'x.fillRect(i*r.width/n,mid-h,Math.max(1,r.width/n-0.4),h*2);}'
+                'if(over&&over.length===n){x.fillStyle="rgba(157,207,173,0.85)";'
+                'for(var o=0;o<n;o++){if(Math.abs(over[o]-peaks[o])<=0.01)continue;'
+                'var oh=Math.max(0.5,Math.min(1,over[o])*mid*0.95);'
+                'x.fillRect(o*r.width/n,mid-oh,Math.max(1,r.width/n-0.4),oh*2);}}'
                 'var v=vid();'
                 'if(v&&span>0){var ct=v.currentTime;'
                 'if(ct>=t0&&ct<=t1){var px=(ct-t0)/span*r.width;'
                 'x.strokeStyle="#9DCFAD";x.lineWidth=2;x.beginPath();x.moveTo(px,0);x.lineTo(px,r.height);x.stroke();}}'
                 '}'
-                'function draw(){paint(ca,all,0,dur,true);if(zoom)paint(cz,zoom,zs,ze,false);}'
+                'function draw(){paint(ca,all,0,dur,true);if(zoom)paint(cz,zoom,zs,ze,false,cand);}'
                 'var busy=false;'
                 'function tick(){'
                 'var a=Number(urlv("part_start",zs))||0,b=Number(urlv("part_end",ze))||0;'
                 'if(b>a&&(a!==zs||b!==ze)&&!busy){busy=true;zs=a;ze=b;'
                 'get(zs,Math.min(ze,dur),900).then(function(j){zoom=j.peaks||[];'
                 'zl.textContent="Selected Part \u00b7 "+zs+"\u2013"+ze+" s at "'
-                '+(j.bin_duration_s||0).toFixed(3)+" s per bin";busy=false;draw();})'
+                '+(j.bin_duration_s||0).toFixed(3)+" s per bin";'
+                'return getcand(zs,Math.min(ze,dur),900);}).then(function(k){'
+                'cand=k&&k.peaks?k.peaks:null;busy=false;draw();})'
                 '.catch(function(e){busy=false;ostat("owave-stat",e.message);});}'
                 'draw();}'
                 'function get(a,b,bins){return ofetch(app+"/api/waveform?project_id="+pid'
                 '+"&role=original&start_s="+a+(b?"&end_s="+b:"")+"&bins="+bins,1)'
                 '.then(function(r){return r.json();});}'
+                'function getcand(a,b,bins){if(!cid)return Promise.resolve(null);'
+                'return ofetch(app+"/api/waveform?project_id="+pid+"&role=candidate&candidate_id="+cid'
+                '+"&start_s="+a+"&end_s="+b+"&bins="+bins,1)'
+                '.then(function(r){return r.json();}).catch(function(){return null;});}'
                 'get(0,0,900).then(function(j){all=j.peaks||[];dur=j.duration_s||j.end_s||0;'
                 'if(!(ze>zs)){zs=Math.max(0,Math.min(zs,dur-1));ze=Math.min(dur,zs+60);}'
                 'note.textContent="Whole film \u00b7 "+Math.round(dur)+" s at "'
@@ -215,7 +227,10 @@ def panel_html(slug, app, server_port=None):
                 'draw();return get(zs,Math.min(ze,dur),900);})'
                 '.then(function(j){zoom=j.peaks||[];'
                 'zl.textContent="Selected Part \u00b7 "+zs+"\u2013"+ze+" s at "'
-                '+(j.bin_duration_s||0).toFixed(3)+" s per bin";'
+                '+(j.bin_duration_s||0).toFixed(3)+" s per bin"'
+                '+(cid?" \u00b7 green is render "+cid:"");'
+                'draw();return getcand(zs,Math.min(ze,dur),900);}).then(function(k){'
+                'cand=k&&k.peaks?k.peaks:null;'
                 'draw();ostat("owave-stat","");window.__owaveTimer=setInterval(tick,250);})'
                 '.catch(function(e){ostat("owave-stat",e.message);});'
                 '})();</script>'
@@ -535,15 +550,50 @@ def dashboard():
         ],
         datasource=loki if hosted else prom,
     )
-    add(
-        "The film", "text", {"x": 0, "y": 3, "w": 14, "h": 11}, [],
-        description="The picture this project replaces sound inside. Every panel around it describes this same film on the picture clock. Seek to $part_start to inspect the selected Part.",
-        options={"mode": "html", "content": (
-            '<video controls preload="metadata" style="width:100%;height:100%;max-height:340px;'
-            'background:#050607;border-radius:2px" '
-            f'src="{app}/projects/${{project}}/video.mp4#t=${{part_start}}"></video>'
-        )},
+    film_markup = (
+        '<div style="height:340px;display:flex;flex-direction:column;gap:4px;overflow:hidden">'
+        '<video id="ofilm" controls preload="metadata" style="width:100%;flex:1 1 0;min-height:0;'
+        'background:#050607;border-radius:2px"></video>'
+        '<div id="ofilm-src" style="flex:0 0 auto;font:400 10px/1.3 system-ui;color:#6E747C"></div>'
+        '</div>'
     )
+    film_script = (
+        'function urlv(n,fb){var m=new RegExp("[?&]var-"+n+"=([^&#]*)").exec(location.search);'
+        'return m?decodeURIComponent(m[1]):fb;}'
+        'var pid=urlv("project","${project}"),cid=urlv("candidate","${candidate}"),'
+        'ts=Number(urlv("part_start","${part_start}"))||0;'
+        'if(!/^[a-f0-9]{12}$/.test(cid))cid="";'
+        'var v=document.getElementById("ofilm"),lab=document.getElementById("ofilm-src");'
+        'if(v){var name=cid?cid+"-master.mp4":"video.mp4";'
+        'var url="%s/projects/"+pid+"/"+name+"#t="+ts;'
+        'if(v.getAttribute("src")!==url){v.setAttribute("src",url);}'
+        'lab.textContent=cid?("render "+cid+" \u00b7 replaced sound"):'
+        '"original recording \u00b7 set Candidate to hear a render";}'
+    ) % app
+    if hosted:
+        add(
+            "The film", BUSINESS_TEXT, {"x": 0, "y": 3, "w": 14, "h": 11}, [],
+            description="The picture this project replaces sound inside. Leave Candidate as .* to watch the original; set it to a render id to watch that render with its replaced sound. Every panel around it describes this same film on the picture clock. Seek to $part_start to inspect the selected Part.",
+            options={
+                "content": film_markup,
+                "defaultContent": film_markup,
+                "editors": ["afterRender"],
+                "afterRender": film_script,
+                "everyRow": False,
+                "wrap": True,
+                "renderMode": "data",
+            },
+        )
+    else:
+        add(
+            "The film", "text", {"x": 0, "y": 3, "w": 14, "h": 11}, [],
+            description="The picture this project replaces sound inside. Every panel around it describes this same film on the picture clock. Seek to $part_start to inspect the selected Part.",
+            options={"mode": "html", "content": (
+                '<video controls preload="metadata" style="width:100%;height:100%;max-height:340px;'
+                'background:#050607;border-radius:2px" '
+                f'src="{app}/projects/${{project}}/video.mp4#t=${{part_start}}"></video>'
+            )},
+        )
     if hosted:
         # Only logs reach Grafana Cloud, so count the recorded runs instead of a gauge.
         add(
