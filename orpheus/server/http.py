@@ -68,9 +68,10 @@ class LocalHandler(BaseHTTPRequestHandler):
 
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        dashboard = f"http://127.0.0.1:{GRAFANA_PORTS['GRAFANA']}"
-        if self.command in ("GET", "HEAD") and self.headers.get("Origin") == dashboard:
-            self.send_header("Access-Control-Allow-Origin", dashboard)
+        origin = self.headers.get("Origin")
+        allowed = {f"http://127.0.0.1:{GRAFANA_PORTS['GRAFANA']}", embedders()}
+        if self.command in ("GET", "HEAD") and origin in allowed:
+            self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         if self.command != "HEAD":
