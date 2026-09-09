@@ -691,8 +691,10 @@ def render(pid, family_id, take_id=None, folder=None, *, duck_db=-12,
             }
             atomic(_family_path(pid, family_id), family)
 
-    learned = family.get("approved_agent_fitting", {})
-    variants = learned.get("agent_fitting", {}).get("arrangement", {}).get("rows", [])
+    # Any link in this chain can be explicitly null, and .get defaults never fire then.
+    learned = family.get("approved_agent_fitting") or {}
+    fitting = learned.get("agent_fitting") or {}
+    variants = (fitting.get("arrangement") or {}).get("rows") or []
     report("preparing", 0, "Preparing the full-movie selective render")
     try:
         mix = _write_selective_wav(
@@ -815,8 +817,10 @@ def preview_match(pid, family_id, match_id):
         "range_s": [start_s - offset, end_s - offset],
         "refined_anchor_s": center - offset,
     }
-    learned = family.get("approved_agent_fitting", {})
-    variants = learned.get("agent_fitting", {}).get("arrangement", {}).get("rows", [])
+    # Any link here can be explicitly null, and a .get default never fires then.
+    learned = family.get("approved_agent_fitting") or {}
+    fitting = learned.get("agent_fitting") or {}
+    variants = (fitting.get("arrangement") or {}).get("rows") or []
     try:
         mix = _write_selective_wav(
             scratch, wav_path, _mono(_read_pcm(source_path)), [local], -12, 0.025, 0,
