@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import tempfile
 import time
 import uuid
 import wave
@@ -15,7 +16,7 @@ from numpy.lib.format import open_memmap
 
 from ..config import SAMPLE_RATE as RATE
 from ..ops import observability as obs
-from . import media
+from . import media, projects
 from .projects import atomic, ff, load, project_dir
 
 INDEX_SCHEMA = "sound-index.v1"
@@ -587,9 +588,23 @@ def _read_pcm(path):
 def _write_pcm(path, samples):
     samples = np.asarray(samples, dtype=np.float32)
     channels = 2 if samples.ndim == 2 else 1
-    with wave.open(str(path), "wb") as output:
-        output.setparams((channels, 2, RATE, len(samples), "NONE", "not compressed"))
-        output.writeframes(np.clip(np.round(samples * 32768), -32768, 32767).astype("<i2").tobytes())
+
+    def _emit(target):
+        with wave.open(str(target), "wb") as output:
+            output.setparams((channels, 2, RATE, len(samples), "NONE", "not compressed"))
+            output.writeframes(
+                np.clip(np.round(samples * 32768), -32768, 32767).astype("<i2").tobytes()
+            )
+
+    # wave.open rewrites the RIFF header on close, which gcsfuse refuses.
+    if not projects._needs_staging(path):
+        _emit(path)
+        return
+    with tempfile.TemporaryDirectory(prefix="orpheus-pcm-") as staging:
+        local = Path(staging) / Path(str(path)).name
+        _emit(local)
+        Path(str(path)).parent.mkdir(parents=True, exist_ok=True)
+        projects.publish(local, path)
 
 def _pcm_chunks(path):
     frames, channels = _wav_shape(path)

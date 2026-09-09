@@ -6,6 +6,7 @@ import math
 import re
 import shutil
 import subprocess
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -65,13 +66,39 @@ def digest(path):
     return value.hexdigest()
 
 
+def _needs_staging(path):
+    """gcsfuse rejects the backward seeks encoders use to patch headers."""
+    from .. import config
+
+    return config.STORAGE_BACKEND == "gcs" and str(path).startswith(str(config.DATA_DIR))
+
+
 def ff(*args):
+    args = list(args)
+    target = Path(str(args[-1])) if args else None
+    if target is None or not _needs_staging(target):
+        _run_ff(args)
+        return
+    with tempfile.TemporaryDirectory(prefix="orpheus-ff-") as staging:
+        local = Path(staging) / target.name
+        _run_ff([*args[:-1], local])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        publish(local, target)
+
+
+def _run_ff(args):
     subprocess.run(
         ["ffmpeg", "-v", "error", "-nostdin", "-y", *map(str, args)],
         check=True,
         capture_output=True,
         timeout=7200,
     )
+
+
+def publish(local, target):
+    """Copy a finished file to storage in one sequential pass."""
+    with open(local, "rb") as source, open(target, "wb") as sink:
+        shutil.copyfileobj(source, sink, 8 * 1024 * 1024)
 
 
 def probe(path):
