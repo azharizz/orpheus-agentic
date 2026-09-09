@@ -14,7 +14,7 @@ import httpx
 from ..config import GRAFANA_PORTS, OBSERVABILITY_ASSETS, SERVER_PORT
 from . import observability as obs
 
-PANEL_SLUGS = ("soundwave", "matcher", "now", "player")
+PANEL_SLUGS = ("soundwave", "matcher", "now")
 DATASOURCE_UIDS = {"orpheus-prometheus", "orpheus-loki", "orpheus-tempo"}
 CLOUD_DATASOURCE_UIDS = {"grafanacloud-prom", "grafanacloud-logs", "grafanacloud-traces"}
 
@@ -473,26 +473,15 @@ def dashboard():
              "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#3A3F45"}}]},
         ],
     )
-    if hosted:
-        add(
-            "The film and its soundwave", "text", {"x": 0, "y": 3, "w": 14, "h": 14}, [],
-            description="The picture this project replaces sound inside, with the measured soundwave of the same film beneath it on one clock. The Part is shaded. Scrub the player to inspect any moment; quiet is unreviewed, never proven silent.",
-            options={"mode": "html", "content": (
-                '<iframe src="' + app + '/embed/player?project=${project}'
-                '&part_start=${part_start}&part_end=${part_end}"'
-                ' width="100%" height="420"></iframe>'
-            )},
-        )
-    else:
-        add(
-            "The film", "text", {"x": 0, "y": 3, "w": 14, "h": 11}, [],
-            description="The picture this project replaces sound inside. Every panel around it describes this same film on the picture clock. Seek to $part_start to inspect the selected Part.",
-            options={"mode": "html", "content": (
-                '<video controls preload="metadata" style="width:100%;height:100%;max-height:340px;'
-                'background:#050607;border-radius:2px" '
-                f'src="{app}/projects/${{project}}/video.mp4#t=${{part_start}}"></video>'
-            )},
-        )
+    add(
+        "The film", "text", {"x": 0, "y": 3, "w": 14, "h": 11}, [],
+        description="The picture this project replaces sound inside. Every panel around it describes this same film on the picture clock. Seek to $part_start to inspect the selected Part.",
+        options={"mode": "html", "content": (
+            '<video controls preload="metadata" style="width:100%;height:100%;max-height:340px;'
+            'background:#050607;border-radius:2px" '
+            f'src="{app}/projects/${{project}}/video.mp4#t=${{part_start}}"></video>'
+        )},
+    )
     if hosted:
         # Only logs reach Grafana Cloud, so count the recorded runs instead of a gauge.
         add(
@@ -556,7 +545,17 @@ def dashboard():
         ]},
         datasource=loki,
     )
-    if not hosted:
+    if hosted:
+        add(
+            "Soundwave of the film", "text", {"x": 0, "y": 14, "w": 14, "h": 8}, [],
+            description="Whole film plus the selected Part, drawn from measured audio. Amplitude is signal only: a tall peak is not a footstep and a flat stretch is not proven silence.",
+            options={"mode": "html", "content": (
+                '<iframe src="' + app + '/embed/soundwave?project=${project}'
+                '&part_start=${part_start}&part_end=${part_end}"'
+                ' width="100%" height="300"></iframe>'
+            )},
+        )
+    else:
         add(
         "Soundwave of the film", "text", {"x": 0, "y": 14, "w": 14, "h": 8}, [],
         description="Top: the whole film at coarse resolution, with the selected Part shaded. Bottom: the same audio zoomed to $part_start-$part_end s, where individual contacts become visible. Both markers follow the player. Amplitude is signal level only \u2014 a tall peak is not a footstep and a flat stretch is not proven silence.",
@@ -580,7 +579,7 @@ def dashboard():
     )
     if hosted:
         add(
-            "What is happening at this moment", "text", {"x": 14, "y": 3, "w": 10, "h": 14}, [],
+            "What is happening at this moment", "text", {"x": 14, "y": 14, "w": 10, "h": 8}, [],
             description="Decision state at the playhead. Unexamined picture is unknown, not proven silent.",
             options={"mode": "html", "content": (
                 '<iframe src="' + app + '/embed/now?project=${project}'

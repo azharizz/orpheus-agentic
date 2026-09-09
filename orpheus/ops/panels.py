@@ -143,37 +143,3 @@ def now_svg(bands, part_start, part_end, duration):
         "Unclaimed time is unreviewed, rather than proven silent; this is never an approval."
     )
     return _frame(width, height, "".join(body), caption)
-
-
-def player_svg(video_url, peaks, duration, part_start, part_end):
-    """Put the picture and its soundwave in one frame so they share a clock."""
-    width, height = 1000, 130
-    mid = height / 2
-    body = []
-    if duration > 0 and part_end > part_start:
-        a = max(0.0, part_start / duration) * width
-        b = min(1.0, part_end / duration) * width
-        body.append(
-            f'<rect x="{a:.1f}" y="0" width="{max(2.0, b - a):.1f}" '
-            f'height="{height}" fill="rgba(255,90,54,0.16)"/>'
-        )
-    body.append(f'<line x1="0" y1="{mid}" x2="{width}" y2="{mid}" stroke="#2A2E33"/>')
-    count = len(peaks) or 1
-    step = width / count
-    for index, peak in enumerate(peaks):
-        tall = max(0.5, min(1.0, peak) * mid * 0.95)
-        body.append(
-            f'<rect x="{index * step:.2f}" y="{mid - tall:.2f}" '
-            f'width="{max(0.6, step - 0.4):.2f}" height="{tall * 2:.2f}" fill="#FF5A36"/>'
-        )
-    return (
-        '<div style="height:100%;display:flex;flex-direction:column;gap:4px">'
-        f'<video src="{_esc(video_url)}#t={part_start:g}" controls preload="metadata" '
-        'style="width:100%;flex:1;min-height:0;background:#000"></video>'
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
-        f'width="100%" height="90" preserveAspectRatio="none" '
-        f'style="display:block;background:#101215;flex:0 0 auto">{"".join(body)}</svg>'
-        '<div style="font:400 11px/1.4 system-ui;color:#8A9099;flex:0 0 auto">'
-        f'Whole film · {round(duration)} s · Part {part_start:g}–{part_end:g} s shaded'
-        '</div></div>'
-    )

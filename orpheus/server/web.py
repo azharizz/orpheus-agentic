@@ -406,16 +406,6 @@ class Handler(LocalHandler):
         from ..ops import panels
 
         case = projects.load(project)
-        if slug == "player":
-            whole = media.waveform(case["original_path"], 900, 0)
-            duration = whole.get("duration_s") or whole.get("end_s") or 0
-            return panels.player_svg(
-                f"/projects/{project}/video.mp4",
-                whole.get("peaks", []),
-                duration,
-                part_start,
-                part_end,
-            )
         if slug == "soundwave":
             whole = media.waveform(case["original_path"], 900, 0)
             duration = whole.get("duration_s") or whole.get("end_s") or 0

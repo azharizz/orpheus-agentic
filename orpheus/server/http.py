@@ -37,11 +37,9 @@ class LocalHandler(BaseHTTPRequestHandler):
         embed = self.path.startswith("/embed/")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'%s; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:%s; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors %s"
+            "default-src 'self'; script-src 'self'%s; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors %s"
             % (
                 " 'unsafe-inline'" if embed else "",
-                # The panel player follows a signed redirect to object storage.
-                " https://storage.googleapis.com" if embed else "",
                 embedders() if embed else "'none'",
             ),
         )
