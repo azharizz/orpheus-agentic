@@ -25,3 +25,26 @@ gcloud storage buckets update gs://BUCKET --cors-file=deploy/gcs-cors.json
 gcloud iam service-accounts add-iam-policy-binding SA_EMAIL \
   --member="serviceAccount:SA_EMAIL" --role="roles/iam.serviceAccountTokenCreator"
 ```
+
+## Publishing the dashboard
+
+`grafana-service-account-token` holds the read-only Viewer token that
+`grafana-mcp` presents to Grafana; do not overwrite it. Dashboard
+publishing needs a separate Editor token in
+`grafana-dashboard-writer-token`:
+
+```sh
+printf %s "$EDITOR_TOKEN" | gcloud secrets versions add \
+  grafana-dashboard-writer-token --data-file=- --project=PROJECT_ID
+
+GRAFANA_SERVICE_ACCOUNT_TOKEN=$(gcloud secrets versions access latest \
+  --secret=grafana-dashboard-writer-token --project=PROJECT_ID) \
+ORPHEUS_GRAFANA_LOKI_DATASOURCE_UID=grafanacloud-logs \
+ORPHEUS_GRAFANA_PROMETHEUS_DATASOURCE_UID=grafanacloud-prom \
+ORPHEUS_PUBLIC_ORIGIN=https://YOUR-APP.web.app \
+python -m orpheus.ops.grafana publish
+```
+
+Grafana Cloud always sanitizes panel HTML, so the generator emits native
+barchart and table panels when `ORPHEUS_PUBLIC_ORIGIN` is set, and the
+richer canvas panels only for the local Docker stack.
