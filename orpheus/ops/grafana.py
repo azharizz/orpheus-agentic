@@ -139,7 +139,11 @@ def dashboard():
         ' | json | project_id=~"$project"'
         " | start_s >= $part_start | start_s <= $part_end"
     )
-    app = f"http://127.0.0.1:{SERVER_PORT}"
+    # A hosted dashboard cannot reach the operator's loopback address.
+    cfg_app = (obs.config() or {}).get("app_origin") or ""
+    app = cfg_app or f"http://127.0.0.1:{SERVER_PORT}"
+    # Grafana Cloud always sanitizes HTML, so canvas panels cannot draw there.
+    hosted = bool(cfg_app)
 
     def target(expr, ref="A", datasource=prom, *, instant=False, legend=None):
         source_type = "loki" if datasource == loki else "prometheus"
@@ -293,7 +297,29 @@ def dashboard():
         ]},
         datasource=loki,
     )
-    add(
+    if hosted:
+        add(
+            "Soundwave of the film", "barchart", {"x": 0, "y": 14, "w": 14, "h": 8},
+            [target(base + ' | event="movie_signal"', datasource=loki)],
+            description="Measured level across the film. Amplitude is signal only: a tall peak is not a footstep and a flat stretch is not proven silence.",
+            options={"barRadius": 0, "barWidth": .9, "fullHighlight": False, "groupWidth": .9,
+                     "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+                     "orientation": "vertical", "showValue": "never", "stacking": "none",
+                     "tooltip": {"mode": "multi", "sort": "desc"}, "xField": "time_s"},
+            transformations=[
+                {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
+                {"id": "filterFieldsByName", "options": {"include": {"names": ["time_s", "rms_dbfs", "peak_dbfs"]}}},
+                {"id": "convertFieldType", "options": {"conversions": [
+                    {"targetField": "time_s", "destinationType": "numeric"},
+                    {"targetField": "rms_dbfs", "destinationType": "numeric"},
+                    {"targetField": "peak_dbfs", "destinationType": "numeric"}]}},
+                {"id": "sortBy", "options": {"fields": [{"field": "time_s", "desc": False}]}},
+            ],
+            field={"unit": "dB", "min": -80, "max": 0, "noValue": "No measured waveform yet"},
+            datasource=loki,
+        )
+    else:
+        add(
         "Soundwave of the film", "text", {"x": 0, "y": 14, "w": 14, "h": 8}, [],
         description="Top: the whole film at coarse resolution, with the selected Part shaded. Bottom: the same audio zoomed to $part_start-$part_end s, where individual contacts become visible. Both markers follow the player. Amplitude is signal level only \u2014 a tall peak is not a footstep and a flat stretch is not proven silence.",
         options={"mode": "html", "content": (
@@ -361,7 +387,28 @@ def dashboard():
             '})();</script>'
         )},
     )
-    add(
+    if hosted:
+        add(
+            "How sure is the matcher, moment by moment", "barchart", {"x": 0, "y": 22, "w": 24, "h": 9},
+            [target(base + ' | event="family_range"', datasource=loki)],
+            description="Similarity of each proposed match. Height is the matcher's own score, not proof the moment belongs to this family.",
+            options={"barRadius": 0, "barWidth": .9, "fullHighlight": False, "groupWidth": .9,
+                     "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+                     "orientation": "vertical", "showValue": "never", "stacking": "none",
+                     "tooltip": {"mode": "single", "sort": "none"}, "xField": "start_s"},
+            transformations=[
+                {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True}},
+                {"id": "filterFieldsByName", "options": {"include": {"names": ["start_s", "similarity_score"]}}},
+                {"id": "convertFieldType", "options": {"conversions": [
+                    {"targetField": "start_s", "destinationType": "numeric"},
+                    {"targetField": "similarity_score", "destinationType": "numeric"}]}},
+                {"id": "sortBy", "options": {"fields": [{"field": "start_s", "desc": False}]}},
+            ],
+            field={"min": 0, "max": 1, "decimals": 3, "noValue": "No ranked matches yet"},
+            datasource=loki,
+        )
+    else:
+        add(
         "How sure is the matcher, moment by moment", "text", {"x": 0, "y": 22, "w": 24, "h": 9}, [],
         description="Each bar is a proposed occurrence of a sound family at its real position in the film, with height showing the matcher's cosine similarity to your confirmed examples. Grey behind it is the density of detected acoustic events, which is texture, not sound identity. Similarity is ranking evidence only \u2014 never a probability, never an approval. It follows the player above.",
         options={"mode": "html", "content": (
@@ -449,7 +496,22 @@ def dashboard():
             '})();</script>'
         )},
     )
-    add(
+    if hosted:
+        add(
+            "What is happening at this moment", "table", {"x": 14, "y": 14, "w": 10, "h": 8},
+            [target(base + ' | event=~"family_range|candidate|human_review"', datasource=loki)],
+            description="The most recent decisions on this film. Rows are records, not approvals.",
+            options=table_options,
+            transformations=[
+                {"id": "extractFields", "options": {"source": "Line", "format": "json", "replace": True, "keepTime": True}},
+                {"id": "filterFieldsByName", "options": {"include": {"names": ["Time", "event", "status", "decision", "verdict", "start_s", "end_s"]}}},
+                {"id": "sortBy", "options": {"fields": [{"field": "Time", "desc": True}]}},
+            ],
+            field={"custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "noValue": "No activity yet"},
+            datasource=loki,
+        )
+    else:
+        add(
         "What is happening at this moment", "text", {"x": 14, "y": 14, "w": 10, "h": 8}, [],
         description="The picture window around the playhead, with every sound-family decision that covers it. Green accepted, amber awaiting your review. Ticks mark where a replacement sound was placed. It follows the player above. A pending band is a ranked proposal, never an approval, and an empty stretch is unexamined rather than proven silent.",
         options={"mode": "html", "content": (

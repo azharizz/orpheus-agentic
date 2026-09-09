@@ -56,6 +56,7 @@ def config():
             or os.environ.get("ORPHEUS_GRAFANA_DASHBOARD_URL", "").strip()
         ),
         "telemetry_token": telemetry_token,
+        "app_origin": os.environ.get("ORPHEUS_PUBLIC_ORIGIN", "").strip().rstrip("/"),
         "loki_url": stored.get("loki_url")
         or os.environ.get("ORPHEUS_GRAFANA_LOKI_URL", "").strip().rstrip("/"),
         "loki_user": str(
