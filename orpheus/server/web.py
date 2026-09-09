@@ -378,10 +378,16 @@ class Handler(LocalHandler):
         # Grafana interpolates ${var} in panel content but not inside a framed
         # document, so resolve the placeholders from the iframe query instead.
         query = parse_qs(urlparse(self.path).query)
-        for name in ("project", "part_start", "part_end"):
-            value = query.get(name, [""])[0]
-            if not re.fullmatch(r"[A-Za-z0-9_.-]{0,64}", value):
-                raise RequestError("Panel parameter is not valid.", 400)
+        project = query.get("project", [""])[0]
+        if not re.fullmatch(r"[a-f0-9]{16}", project):
+            # The dashboard ships a '.*' wildcard, so show the newest project.
+            rows = project_list(self.owner_id)["projects"]
+            project = rows[0]["id"] if rows else ""
+        values = {"project": project}
+        for name in ("part_start", "part_end"):
+            raw = query.get(name, [""])[0]
+            values[name] = raw if re.fullmatch(r"\d{0,7}(\.\d{0,3})?", raw) else "0"
+        for name, value in values.items():
             markup = markup.replace("${" + name + "}", value)
         body = (
             "<!doctype html><meta charset=utf-8>"
