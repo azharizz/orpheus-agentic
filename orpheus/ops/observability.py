@@ -944,14 +944,14 @@ async def investigate(project_id, topic="history", candidate_id="", part=None):
                         }
                     arguments = (
                         {
-                            "datasourceUid": "orpheus-prometheus",
+                            "datasourceUid": cfg.get("prometheus_datasource_uid") or "orpheus-prometheus",
                             "expr": 'up{job="orpheus"} or orpheus_export_pending or orpheus_provider_failures_total or ALERTS',
                             "queryType": "instant",
                             "endTime": "now",
                         }
                         if topic == "runtime"
                         else {
-                            "datasourceUid": "orpheus-loki",
+                            "datasourceUid": cfg.get("loki_datasource_uid") or "orpheus-loki",
                             "logql": selector,
                             "limit": MAX_LENS_ROWS if topic == "part" else 100,
                             "format": "compact",
