@@ -560,8 +560,10 @@ def dashboard():
     )
     film_markup = (
         '<div style="height:340px;display:flex;flex-direction:column;gap:4px;overflow:hidden">'
+        # Grafana interpolates the markup, so the original plays even if the script does not run.
         '<video id="ofilm" controls preload="metadata" style="width:100%;flex:1 1 0;min-height:0;'
-        'background:#050607;border-radius:2px"></video>'
+        'background:#050607;border-radius:2px" '
+        'src="' + app + '/projects/${project}/video.mp4#t=${part_start}"></video>'
         '<div id="ofilm-src" style="flex:0 0 auto;font:400 10px/1.3 system-ui;color:#6E747C"></div>'
         '</div>'
     )
@@ -572,18 +574,19 @@ def dashboard():
         'ts=Number(urlv("part_start","${part_start}"))||0;'
         'if(!/^[a-f0-9]{12}$/.test(cid))cid="";'
         'var v=document.getElementById("ofilm"),lab=document.getElementById("ofilm-src");'
-        'if(!v)return;'
+        'if(v&&/^[a-f0-9]{16}$/.test(pid)){'
         'function show(id,how){var name=id?id+"-master.mp4":"video.mp4";'
         'var url="%s/projects/"+pid+"/"+name+"#t="+ts;'
         'if(v.getAttribute("src")!==url)v.setAttribute("src",url);'
         'lab.textContent=id?("render "+id+" \u00b7 replaced sound \u00b7 "+how):'
         '"original recording \u00b7 no render found for this project";}'
-        'if(cid){show(cid,"chosen");return;}'
-        'show("","");'
+        'show(cid,cid?"chosen":"");'
+        'if(!cid){'
         'fetch("%s/api/families?project_id="+pid).then(function(r){return r.json();})'
         '.then(function(j){var fs=j.families||[],best="";'
         'fs.forEach(function(f){if(f.latest_render_id)best=f.latest_render_id;});'
-        'if(best)show(best,"latest");}).catch(function(){});'
+        'if(best)show(best,"latest");}).catch(function(){});}'
+        '}'
     ) % (app, app)
     if hosted:
         add(
