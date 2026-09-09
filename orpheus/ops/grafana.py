@@ -131,9 +131,11 @@ STATUS = (
     'function ostat(id,e){var b=document.getElementById(id);if(!b)return;'
     'var w=window,k="__ostat_"+id;w[k]=w[k]||{n:0,last:""};'
     'if(e){w[k].n++;w[k].last=new Date().toLocaleTimeString()+" \u00b7 "+e;}'
+    'if(!e)w[k].ok=true;'
     'if(!w[k].n){b.textContent="";return;}'
     'b.style.color=e?"#EAC17C":"#6E747C";'
-    'b.textContent=(e?"read failing \u00b7 drawing may be stale \u00b7 ":"reads recovered \u00b7 ")'
+    'b.textContent=(e?(w[k].ok?"read failing \u00b7 drawing may be stale \u00b7 "'
+    ':"read failing \u00b7 nothing drawn yet \u00b7 "):"reads recovered \u00b7 ")'
     '+w[k].n+" failed so far \u00b7 last "+w[k].last;}'
 )
 
@@ -215,9 +217,7 @@ def panel_html(slug, app, server_port=None):
                 'zl.textContent="Selected Part \u00b7 "+zs+"\u2013"+ze+" s at "'
                 '+(j.bin_duration_s||0).toFixed(3)+" s per bin";'
                 'draw();ostat("owave-stat","");window.__owaveTimer=setInterval(tick,250);})'
-                '.catch(function(e){ostat("owave-stat",e.message);'
-                'if(!all){note.textContent="Waveform unavailable. Orpheus must be running; '
-                'this is not evidence of silence.";}});'
+                '.catch(function(e){ostat("owave-stat",e.message);});'
                 '})();</script>'
         ),
         "matcher": (
@@ -303,10 +303,7 @@ def panel_html(slug, app, server_port=None):
                 'evs.forEach(function(e){var t=e.anchor_s||e.range_s[0];'
                 'var b=Math.min(B-1,Math.max(0,Math.floor(t/dur*B)));dens[b]++;});'
                 'ready();})'
-                '.catch(function(e){ostat("osure-stat",e.message);'
-                'if(!props.length){head.textContent="Matcher evidence unavailable";'
-                'head.style.color="#FF8790";'
-                'sub.textContent="Orpheus must be running. Not evidence that no proposals exist.";}});'
+                '.catch(function(e){ostat("osure-stat",e.message);});'
                 '})();</script>'
         ),
         "now": (
@@ -379,9 +376,7 @@ def panel_html(slug, app, server_port=None):
                 'st.textContent=bands.length+" ranges known \u00b7 "+acc+" accepted \u00b7 "'
                 '+(bands.length-acc)+" awaiting review \u00b7 window \u00b1"+(WIN/2)+" s";'
                 'draw();ostat("onow-stat","");window.__onowTimer=setInterval(draw,200);})'
-                '.catch(function(e){ostat("onow-stat",e.message);'
-                'if(!bands.length){head.textContent="Decisions unavailable";head.style.color="#FF8790";'
-                'sub.textContent="Orpheus must be running. This is not evidence that no decisions exist.";}});'
+                '.catch(function(e){ostat("onow-stat",e.message);});'
                 '})();</script>'
         ),
     }
