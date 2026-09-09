@@ -358,6 +358,30 @@ def panel_html(slug, app, server_port=None):
     return parts[slug]
 
 
+def panel_split(slug, app, server_port=None):
+    """Separate the panel markup from its script for hosts that run code directly."""
+    whole = panel_html(slug, app, server_port)
+    head, _, tail = whole.partition("<script>")
+    return head, tail.rpartition("</script>")[0]
+
+
+BUSINESS_TEXT = "marcusolsson-dynamictext-panel"
+
+
+def live_panel(slug, app):
+    """Business Text runs panel code directly, so Grafana Cloud can animate again."""
+    markup, script = panel_split(slug, app, SERVER_PORT)
+    return BUSINESS_TEXT, {
+        "content": markup,
+        "defaultContent": markup,
+        "editors": ["afterRender"],
+        "afterRender": script,
+        "everyRow": False,
+        "wrap": True,
+        "renderMode": "data",
+    }
+
+
 def dashboard():
     panels = []
     orange, green, amber, rose = "#FF5A36", "#9DCFAD", "#EAC17C", "#FF8790"
@@ -545,53 +569,26 @@ def dashboard():
         ]},
         datasource=loki,
     )
-    if hosted:
-        add(
-            "Soundwave of the film", "text", {"x": 0, "y": 14, "w": 14, "h": 8}, [],
-            description="Whole film plus the selected Part, drawn from measured audio. Amplitude is signal only: a tall peak is not a footstep and a flat stretch is not proven silence.",
-            options={"mode": "html", "content": (
-                '<iframe src="' + app + '/embed/soundwave?project=${project}'
-                '&part_start=${part_start}&part_end=${part_end}"'
-                ' width="100%" height="300"></iframe>'
-            )},
-        )
-    else:
-        add(
-        "Soundwave of the film", "text", {"x": 0, "y": 14, "w": 14, "h": 8}, [],
+    kind, opts = live_panel("soundwave", app) if hosted else (
+        "text", {"mode": "html", "content": panel_html("soundwave", app, SERVER_PORT)})
+    add(
+        "Soundwave of the film", kind, {"x": 0, "y": 14, "w": 14, "h": 8}, [],
         description="Top: the whole film at coarse resolution, with the selected Part shaded. Bottom: the same audio zoomed to $part_start-$part_end s, where individual contacts become visible. Both markers follow the player. Amplitude is signal level only \u2014 a tall peak is not a footstep and a flat stretch is not proven silence.",
-        options={"mode": "html", "content": panel_html("soundwave", app, SERVER_PORT)},
+        options=opts,
     )
-    if hosted:
-        add(
-            "How sure is the matcher, moment by moment", "text", {"x": 0, "y": 22, "w": 24, "h": 9}, [],
-            description="Every proposal with its similarity score. Height is the matcher's own score, never proof the moment belongs to this family.",
-            options={"mode": "html", "content": (
-                '<iframe src="' + app + '/embed/matcher?project=${project}'
-                '&part_start=${part_start}&part_end=${part_end}"'
-                ' width="100%" height="330"></iframe>'
-            )},
-        )
-    else:
-        add(
-        "How sure is the matcher, moment by moment", "text", {"x": 0, "y": 22, "w": 24, "h": 9}, [],
+    kind, opts = live_panel("matcher", app) if hosted else (
+        "text", {"mode": "html", "content": panel_html("matcher", app, SERVER_PORT)})
+    add(
+        "How sure is the matcher, moment by moment", kind, {"x": 0, "y": 22, "w": 24, "h": 9}, [],
         description="Each bar is a proposed occurrence of a sound family at its real position in the film, with height showing the matcher's cosine similarity to your confirmed examples. Grey behind it is the density of detected acoustic events, which is texture, not sound identity. Similarity is ranking evidence only \u2014 never a probability, never an approval. It follows the player above.",
-        options={"mode": "html", "content": panel_html("matcher", app, SERVER_PORT)},
+        options=opts,
     )
-    if hosted:
-        add(
-            "What is happening at this moment", "text", {"x": 14, "y": 14, "w": 10, "h": 8}, [],
-            description="Decision state at the playhead. Unexamined picture is unknown, not proven silent.",
-            options={"mode": "html", "content": (
-                '<iframe src="' + app + '/embed/now?project=${project}'
-                '&part_start=${part_start}&part_end=${part_end}"'
-                ' width="100%" height="300"></iframe>'
-            )},
-        )
-    else:
-        add(
-        "What is happening at this moment", "text", {"x": 14, "y": 14, "w": 10, "h": 8}, [],
+    kind, opts = live_panel("now", app) if hosted else (
+        "text", {"mode": "html", "content": panel_html("now", app, SERVER_PORT)})
+    add(
+        "What is happening at this moment", kind, {"x": 14, "y": 14, "w": 10, "h": 8}, [],
         description="The picture window around the playhead, with every sound-family decision that covers it. Green accepted, amber awaiting your review. Ticks mark where a replacement sound was placed. It follows the player above. A pending band is a ranked proposal, never an approval, and an empty stretch is unexamined rather than proven silent.",
-        options={"mode": "html", "content": panel_html("now", app, SERVER_PORT)},
+        options=opts,
     )
     add(
         "What the film still hides", "table", {"x": 0, "y": 31, "w": 14, "h": 9},
