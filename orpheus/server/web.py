@@ -427,6 +427,8 @@ class Handler(LocalHandler):
                 {"error": "An agent run or edit is active. Wait for it to finish."}, 409
             )
         except (ValueError, KeyError, TypeError, AttributeError, UnicodeError):
+            # The reply stays generic; the operator log needs the real cause.
+            traceback.print_exc()
             self.send_json(
                 {
                     "error": "Invalid input. Check the selected project, values and file types."
