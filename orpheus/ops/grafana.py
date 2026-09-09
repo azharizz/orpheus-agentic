@@ -753,6 +753,23 @@ def publish(url=None, token=None):
         path.write_text(committed)
     doc.pop("id", None)
     with httpx.Client(base_url=base, timeout=30, trust_env=False) as client:
+        existing = client.get(
+            "/api/datasources", headers={"Authorization": "Bearer " + token}
+        )
+        existing.raise_for_status()
+        known = {row["uid"] for row in existing.json()}
+        wanted = {
+            uid
+            for uid in (cfg.get("loki_datasource_uid"), cfg.get("prometheus_datasource_uid"))
+            if uid
+        }
+        missing = wanted - known
+        if missing:
+            raise ValueError(
+                f"Datasource {sorted(missing)} does not exist on {base}. "
+                "Set ORPHEUS_GRAFANA_LOKI_DATASOURCE_UID and "
+                "ORPHEUS_GRAFANA_PROMETHEUS_DATASOURCE_UID to this instance's uids."
+            )
         response = client.post(
             "/api/dashboards/db",
             headers={"Authorization": "Bearer " + token},
